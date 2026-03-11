@@ -17,7 +17,7 @@ from totalsegmentatorv2.python_api import totalsegmentator
 from comp2comp.inference_class_base import InferenceClass
 
 # from comp2comp.visualization.dicom import to_dicom
-from comp2comp.models.fda_models import Models
+from comp2comp.models.models import Models
 from comp2comp.spine import fda_spine_utils
 
 # from totalsegmentator.libs import (
