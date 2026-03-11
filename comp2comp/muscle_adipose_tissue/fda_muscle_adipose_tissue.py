@@ -18,6 +18,8 @@ from comp2comp.metrics.metrics import CrossSectionalArea, HounsfieldUnits
 from comp2comp.models.models import Models
 
 # from comp2comp.muscle_adipose_tissue.data import Dataset, predict
+MULTILEVEL_STANFORD_MODEL = "stanford_v0.0.2"
+TS_ABDOMINAL_MUSCLES_MODEL = "ts_abdominal_muscles_v0.0.1"
 
 NORMATIVE_VALUES = {
     "12-15": {"mean": 0.9708984375000025, "number": 128, "std": 0.14374630102575722},
@@ -116,7 +118,7 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
         inference_pipeline.muscle_adipose_tissue_model_type = self.model_type
         inference_pipeline.muscle_adipose_tissue_model_name = self.model_name
 
-        if self.model_name == "stanford_v0.0.2":
+        if self.model_name == MULTILEVEL_STANFORD_MODEL:
             self.download_muscle_adipose_tissue_model(inference_pipeline.model_dir)
             nifti_path = os.path.join(
                 inference_pipeline.output_dir,
@@ -180,6 +182,76 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
                     mask[:, :, i] = pred == categories[category]
                 mask = mask.astype(np.uint8)
                 masks.append(mask)
+            return {"images": images, "preds": masks, "spacings": spacings}
+        elif self.model_name == TS_ABDOMINAL_MUSCLES_MODEL:
+            from totalsegmentatorv2.python_api import totalsegmentator
+
+            os.environ["SCRATCH"] = inference_pipeline.model_dir
+            os.environ["TOTALSEG_WEIGHTS_PATH"] = inference_pipeline.model_dir
+
+            nifti_path = os.path.join(
+                inference_pipeline.output_dir,
+                "segmentations",
+                "converted_dcm_multilevel.nii.gz",
+            )
+            output_path = os.path.join(
+                inference_pipeline.output_dir,
+                "segmentations",
+                "abdominal_muscles_seg.nii.gz",
+            )
+
+            seg = totalsegmentator(
+                input=nifti_path,
+                output=output_path,
+                ml=True,
+                nr_thr_resamp=1,
+                nr_thr_saving=6,
+                fast=False,
+                nora_tag="None",
+                preview=False,
+                task="abdominal_muscles",
+                roi_subset=None,
+                statistics=False,
+                radiomics=False,
+                crop_path=None,
+                body_seg=False,
+                force_split=False,
+                output_type="nifti",
+                quiet=False,
+                verbose=False,
+                test=0,
+                skip_saving=True,
+                device="gpu",
+                license_number=None,
+                statistics_exclude_masks_at_border=True,
+                no_derived_masks=False,
+                v1_order=False,
+            )
+
+            image_nib = nib.load(nifti_path)
+            image_nib = nib.as_closest_canonical(image_nib)
+            image = image_nib.get_fdata()
+            seg = nib.as_closest_canonical(seg)
+            pred = seg.get_fdata()
+
+            images = [image[:, :, i] for i in range(image.shape[-1])]
+            preds = [pred[:, :, i] for i in range(pred.shape[-1])]
+
+            images = [np.flip(np.flip(image, axis=0), axis=1).T for image in images]
+            preds = [np.flip(np.flip(pred, axis=0), axis=1).T for pred in preds]
+
+            spacings = [
+                image_nib.header.get_zooms()[0:2] for i in range(image.shape[-1])
+            ]
+
+            categories = self.model_type.categories
+            masks = []
+            for pred in preds:
+                mask = np.zeros((pred.shape[0], pred.shape[1], len(categories)))
+                for i, category in enumerate(categories):
+                    if category == "muscle":
+                        mask[:, :, i] = pred > 0
+                masks.append(mask.astype(np.uint8))
             return {"images": images, "preds": masks, "spacings": spacings}
 
         else:
@@ -260,7 +332,7 @@ class MuscleAdiposeTissuePostProcessing(InferenceClass):
 
         start_time = perf_counter()
 
-        if self.model_name == "stanford_v0.0.2":
+        if self.model_name in (MULTILEVEL_STANFORD_MODEL, TS_ABDOMINAL_MUSCLES_MODEL):
             masks = preds
         else:
             masks = [self.preds_to_mask(p) for p in preds]

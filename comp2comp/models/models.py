@@ -33,6 +33,13 @@ class Models(enum.Enum):
         True,
         ("soft", "bone", "custom"),
     )
+    TS_ABDOMINAL_MUSCLES_V_0_0_1 = (
+        8,
+        "ts_abdominal_muscles_v0.0.1",
+        {"muscle": 0, "sat": 1, "vat": 2, "imat": 3},
+        True,
+        ("soft", "bone", "custom"),
+    )
     TS_SPINE_FULL = (
         4,
         "ts_spine_full",
