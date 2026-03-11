@@ -21,6 +21,14 @@ from comp2comp.muscle_adipose_tissue.data import Dataset, predict
 MULTILEVEL_STANFORD_MODEL = "stanford_v0.0.2"
 TS_ABDOMINAL_MUSCLES_MODEL = "ts_abdominal_muscles_v0.0.1"
 
+def get_totalseg_device() -> str:
+    try:
+        import torch
+
+        return "gpu" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
+
 
 class MuscleAdiposeTissueSegmentation(InferenceClass):
     """Muscle adipose tissue segmentation class."""
@@ -151,6 +159,8 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
 
             os.environ["SCRATCH"] = inference_pipeline.model_dir
             os.environ["TOTALSEG_WEIGHTS_PATH"] = inference_pipeline.model_dir
+            device = get_totalseg_device()
+            print(f"Using TotalSegmentator device: {device}")
 
             nifti_path = os.path.join(
                 inference_pipeline.output_dir,
@@ -184,7 +194,7 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
                 verbose=False,
                 test=0,
                 skip_saving=True,
-                device="gpu",
+                device=device,
                 license_number=None,
                 statistics_exclude_masks_at_border=True,
                 no_derived_masks=False,

@@ -21,6 +21,14 @@ from comp2comp.models.models import Models
 MULTILEVEL_STANFORD_MODEL = "stanford_v0.0.2"
 TS_ABDOMINAL_MUSCLES_MODEL = "ts_abdominal_muscles_v0.0.1"
 
+def get_totalseg_device() -> str:
+    try:
+        import torch
+
+        return "gpu" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
+
 NORMATIVE_VALUES = {
     "12-15": {"mean": 0.9708984375000025, "number": 128, "std": 0.14374630102575722},
     "16-19": {"mean": 1.043302985074628, "number": 134, "std": 0.1171623603196859},
@@ -188,6 +196,8 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
 
             os.environ["SCRATCH"] = inference_pipeline.model_dir
             os.environ["TOTALSEG_WEIGHTS_PATH"] = inference_pipeline.model_dir
+            device = get_totalseg_device()
+            print(f"Using TotalSegmentator device: {device}")
 
             nifti_path = os.path.join(
                 inference_pipeline.output_dir,
@@ -221,7 +231,7 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
                 verbose=False,
                 test=0,
                 skip_saving=True,
-                device="gpu",
+                device=device,
                 license_number=None,
                 statistics_exclude_masks_at_border=True,
                 no_derived_masks=False,
