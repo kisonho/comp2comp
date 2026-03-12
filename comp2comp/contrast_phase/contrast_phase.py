@@ -7,8 +7,11 @@ from typing import Union
 
 from totalsegmentator.libs import (  # download_pretrained_weights,
     nostdout,
-    setup_nnunet,
 )
+try:
+    from totalsegmentator.config import setup_nnunet
+except ImportError:  # backwards compatibility with older TotalSegmentator
+    from totalsegmentator.libs import setup_nnunet
 
 from comp2comp.contrast_phase.contrast_inf import predict_phase
 from comp2comp.inference_class_base import InferenceClass

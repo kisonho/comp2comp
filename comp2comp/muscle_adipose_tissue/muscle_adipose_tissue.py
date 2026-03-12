@@ -33,7 +33,7 @@ def get_totalseg_device() -> str:
 class MuscleAdiposeTissueSegmentation(InferenceClass):
     """Muscle adipose tissue segmentation class."""
 
-    def __init__(self, batch_size: int, model_name: str, model_dir: str = None):
+    def __init__(self, batch_size: int, model_name: str, model_dir: str | None = None):
         super().__init__()
         self.batch_size = batch_size
         self.model_name = model_name
@@ -176,13 +176,14 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
             seg = totalsegmentator(
                 input=nifti_path,
                 output=output_path,
+                task_ids=[294],
                 ml=True,
                 nr_thr_resamp=1,
                 nr_thr_saving=6,
                 fast=False,
                 nora_tag="None",
                 preview=False,
-                task="abdominal_muscles",
+                task="total",
                 roi_subset=None,
                 statistics=False,
                 radiomics=False,

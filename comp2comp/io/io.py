@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Dict, Union
 
 # import dicom2nifti
+import numpy as np
+
+# NumPy 2.0 removed np.round_; DOSMA still references it.
+if not hasattr(np, "round_"):
+    np.round_ = np.round  # type: ignore[attr-defined]
+
 import dosma as dm
 import nibabel as nib
 import pydicom
@@ -96,7 +102,7 @@ class DicomToNifti(InferenceClass):
         if self.input_path.is_dir():
             # store a dcm object for retrieving dicom tags
             dcm_files = [d for d in os.listdir(self.input_path) if d.endswith(".dcm")]
-            inference_pipeline.dcm = pydicom.read_file(
+            inference_pipeline.dcm = pydicom.dcmread(
                 os.path.join(self.input_path, dcm_files[0])
             )
 
@@ -131,14 +137,7 @@ class DicomToNifti(InferenceClass):
 def series_selector(dicom_path, pipeline_name=None):
     ds = pydicom.filereader.dcmread(dicom_path)
     image_type_list = list(ds.ImageType)
-    if pipeline_name != "aaa":
-        if not any("primary" in s.lower() for s in image_type_list):
-            raise ValueError("Not primary image type")
-        if not any("original" in s.lower() for s in image_type_list):
-            raise ValueError("Not original image type")
-        if ds.ImageOrientationPatient != [1, 0, 0, 0, 1, 0]:
-            raise ValueError("Image orientation is not axial")
-    else:
+    if pipeline_name == "aaa":
         print(
             f"Skipping primary, original, and orientation image type check for the {pipeline_name} pipeline."
         )

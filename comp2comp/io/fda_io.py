@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Dict, Union
 
 # import dicom2nifti
+import numpy as np
+
+# NumPy 2.0 removed np.round_; DOSMA still references it.
+if not hasattr(np, "round_"):
+    np.round_ = np.round  # type: ignore[attr-defined]
+
 import dosma as dm
 import pydicom
 import SimpleITK as sitk

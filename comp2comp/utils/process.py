@@ -13,6 +13,32 @@ from pathlib import Path
 from comp2comp.io import io_utils
 
 
+def _configure_torch_checkpoint_loading():
+    """Ensure legacy nnUNet checkpoints still load on PyTorch >= 2.6."""
+    # Respect explicit user choice when forcing weights-only loading.
+    if os.environ.get("TORCH_FORCE_WEIGHTS_ONLY_LOAD", "").strip().lower() in {
+        "1",
+        "true",
+    }:
+        return
+
+    # PyTorch 2.6 changed torch.load default to weights_only=True.
+    # nnUNet/TotalSegmentator checkpoints require full pickle loading.
+    os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+
+    # Add known-safe numpy global used by older checkpoints when possible.
+    try:
+        import numpy as np
+        import torch
+
+        scalar = getattr(np.core.multiarray, "scalar", None)
+        if scalar is not None and hasattr(torch.serialization, "add_safe_globals"):
+            torch.serialization.add_safe_globals([scalar])
+    except Exception:
+        # Best effort only; env var above is the primary compatibility mechanism.
+        pass
+
+
 def find_common_root(paths):
     paths_with_sep = [path if path.endswith("/") else path + "/" for path in paths]
 
@@ -27,6 +53,8 @@ def find_common_root(paths):
 
 
 def process_2d(args, pipeline_builder):
+    _configure_torch_checkpoint_loading()
+
     output_dir = Path(
         os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
@@ -47,6 +75,8 @@ def process_2d(args, pipeline_builder):
 
 
 def process_3d(args, pipeline_builder):
+    _configure_torch_checkpoint_loading()
+
     model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../models")
     if not os.path.exists(model_dir):
         os.mkdir(model_dir)

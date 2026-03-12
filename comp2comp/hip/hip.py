@@ -11,8 +11,11 @@ import pandas as pd
 from totalsegmentator.libs import (
     download_pretrained_weights,
     nostdout,
-    setup_nnunet,
 )
+try:
+    from totalsegmentator.config import setup_nnunet
+except ImportError:  # backwards compatibility with older TotalSegmentator
+    from totalsegmentator.libs import setup_nnunet
 
 from comp2comp.hip import hip_utils
 from comp2comp.hip.hip_visualization import (

@@ -4,8 +4,9 @@ from typing import List, Sequence
 import keras.utils as k_utils
 import numpy as np
 import pydicom
-from keras.utils.data_utils import OrderedEnqueuer
 from tqdm import tqdm
+
+from tensorflow.python.keras.utils.data_utils import OrderedEnqueuer
 
 
 def parse_windows(windows):
@@ -84,7 +85,7 @@ class Dataset(k_utils.Sequence):
 
     def __getitem__(self, idx):
         files = self._files[idx * self._batch_size : (idx + 1) * self._batch_size]
-        dcms = [pydicom.read_file(f, force=True) for f in files]
+        dcms = [pydicom.dcmread(f, force=True) for f in files]
 
         xs = [(x.pixel_array + int(x.RescaleIntercept)).astype("float32") for x in dcms]
 
@@ -121,7 +122,7 @@ def _swap_muscle_imap(xs, ys, muscle_idx: int, imat_idx: int, threshold=-30.0):
     muscle_mask = (labels[..., muscle_idx] > 0.5).astype(int)
     imat_mask = labels[..., imat_idx]
 
-    imat_mask[muscle_mask.astype(np.bool) & (xs < threshold)] = 1
+    imat_mask[muscle_mask.astype(bool) & (xs < threshold)] = 1
     muscle_mask[xs < threshold] = 0
 
     labels[..., muscle_idx] = muscle_mask
@@ -187,7 +188,7 @@ def predict(
         List: List of segmentation masks.
     """
 
-    if num_workers > 0:
+    if num_workers > 0 and OrderedEnqueuer is not None:
         enqueuer = OrderedEnqueuer(
             dataset, use_multiprocessing=use_multiprocessing, shuffle=False
         )

@@ -18,8 +18,11 @@ from PIL import Image
 from totalsegmentator.libs import (
     download_pretrained_weights,
     nostdout,
-    setup_nnunet,
 )
+try:
+    from totalsegmentator.config import setup_nnunet
+except ImportError:  # backwards compatibility with older TotalSegmentator
+    from totalsegmentator.libs import setup_nnunet
 from totalsegmentatorv2.python_api import totalsegmentator
 
 from comp2comp.inference_class_base import InferenceClass
@@ -147,7 +150,7 @@ class SpineSegmentation(InferenceClass):
         os.environ["SCRATCH"] = self.model_dir
         os.environ["TOTALSEG_WEIGHTS_PATH"] = self.model_dir
 
-        if self.model_name == "ts_spine":
+        if self.model_name == "ts_spine" or self.model_name == "ts_spine_full":
             seg = totalsegmentator(
                 input=os.path.join(
                     self.output_dir_segmentations, "converted_dcm.nii.gz"
