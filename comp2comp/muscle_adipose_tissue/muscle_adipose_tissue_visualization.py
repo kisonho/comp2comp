@@ -15,14 +15,34 @@ class MuscleAdiposeTissueVisualizer(InferenceClass):
     def __init__(self):
         super().__init__()
 
-        self._spine_colors = {
-            "L5": [255, 0, 0],
-            "L4": [0, 255, 0],
-            "L3": [255, 255, 0],
-            "L2": [255, 128, 0],
-            "L1": [0, 255, 255],
-            "T12": [255, 0, 255],
-        }
+        spine_levels = [
+            *(f"C{i}" for i in range(1, 8)),
+            *(f"T{i}" for i in range(1, 13)),
+            *(f"L{i}" for i in range(1, 6)),
+        ]
+        hue_steps = len(spine_levels)
+        self._spine_colors = {}
+        for i, level in enumerate(spine_levels):
+            h = i / hue_steps
+            c = 0.85
+            x = c * (1 - abs((h * 6) % 2 - 1))
+            if h < 1 / 6:
+                r, g, b = c, x, 0.0
+            elif h < 2 / 6:
+                r, g, b = x, c, 0.0
+            elif h < 3 / 6:
+                r, g, b = 0.0, c, x
+            elif h < 4 / 6:
+                r, g, b = 0.0, x, c
+            elif h < 5 / 6:
+                r, g, b = x, 0.0, c
+            else:
+                r, g, b = c, 0.0, x
+
+            rgb = np.array([r + 0.15, g + 0.15, b + 0.15], dtype=np.float32)
+            self._spine_colors[level] = np.clip(np.rint(rgb * 255.0), 0, 255).astype(
+                np.uint8
+            )
 
         self._muscle_fat_colors = {
             "muscle": [255, 136, 133],
