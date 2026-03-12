@@ -10,7 +10,6 @@ import numpy as np
 
 from comp2comp.visualization.detectron_visualizer import Visualizer
 
-
 def spine_binary_segmentation_overlay(
     img_in: Union[str, Path],
     mask: Union[str, Path],
@@ -35,34 +34,26 @@ def spine_binary_segmentation_overlay(
         spine (bool, optional): Spine flag. Defaults to True.
         model_type (Models): Model type. Defaults to None.
     """
-    _COLORS = (
-        np.array(
-            [
-                1.000,
-                0.000,
-                0.000,
-                0.000,
-                1.000,
-                0.000,
-                1.000,
-                1.000,
-                0.000,
-                1.000,
-                0.500,
-                0.000,
-                0.000,
-                1.000,
-                1.000,
-                1.000,
-                0.000,
-                1.000,
-            ]
-        )
-        .astype(np.float32)
-        .reshape(-1, 3)
-    )
-
-    label_map = {"L5": 0, "L4": 1, "L3": 2, "L2": 3, "L1": 4, "T12": 5}
+    spine_levels = [*(f"C{i}" for i in range(1, 8)), *(f"T{i}" for i in range(1, 13)), *(f"L{i}" for i in range(1, 6))]
+    level_colors = {}
+    hue_steps = len(spine_levels)
+    for i, level in enumerate(spine_levels):
+        h = i / hue_steps
+        c = 0.85
+        x = c * (1 - abs((h * 6) % 2 - 1))
+        if h < 1 / 6:
+            r, g, b = c, x, 0.0
+        elif h < 2 / 6:
+            r, g, b = x, c, 0.0
+        elif h < 3 / 6:
+            r, g, b = 0.0, c, x
+        elif h < 4 / 6:
+            r, g, b = 0.0, x, c
+        elif h < 5 / 6:
+            r, g, b = x, 0.0, c
+        else:
+            r, g, b = c, 0.0, x
+        level_colors[level] = np.array([r + 0.15, g + 0.15, b + 0.15], dtype=np.float32)
 
     _ROI_COLOR = np.array([1.000, 0.340, 0.200])
 
@@ -86,7 +77,7 @@ def spine_binary_segmentation_overlay(
 
     # draw seg masks
     for i, level in enumerate(levels):
-        color = _COLORS[label_map[level]]
+        color = level_colors.get(level, np.array([1.0, 1.0, 1.0], dtype=np.float32))
         edge_color = None
         alpha_val = 0.2
         vis.draw_binary_mask(
@@ -139,7 +130,7 @@ def spine_binary_segmentation_overlay(
                 mask.shape[1] - _SPINE_TEXT_OFFSET_FROM_RIGHT - 80,
                 _SPINE_TEXT_VERTICAL_SPACING * (i + 1) + _SPINE_TEXT_OFFSET_FROM_TOP,
             ),
-            color=_COLORS[label_map[level]],
+            color=level_colors.get(level, np.array([1.0, 1.0, 1.0], dtype=np.float32)),
             font_size=9,
             horizontal_alignment="left",
         )
@@ -149,7 +140,7 @@ def spine_binary_segmentation_overlay(
                 mask.shape[1] - _SPINE_TEXT_OFFSET_FROM_RIGHT - 35,
                 _SPINE_TEXT_VERTICAL_SPACING * (i + 1) + _SPINE_TEXT_OFFSET_FROM_TOP,
             ),
-            color=_COLORS[label_map[level]],
+            color=level_colors.get(level, np.array([1.0, 1.0, 1.0], dtype=np.float32)),
             font_size=9,
             horizontal_alignment="center",
         )
@@ -159,7 +150,7 @@ def spine_binary_segmentation_overlay(
                 mask.shape[1] - _SPINE_TEXT_OFFSET_FROM_RIGHT,
                 _SPINE_TEXT_VERTICAL_SPACING * (i + 1) + _SPINE_TEXT_OFFSET_FROM_TOP,
             ),
-            color=_COLORS[label_map[level]],
+            color=level_colors.get(level, np.array([1.0, 1.0, 1.0], dtype=np.float32)),
             font_size=9,
             horizontal_alignment="center",
         )
@@ -177,7 +168,7 @@ def spine_binary_segmentation_overlay(
                     * (pixel_spacing[2] / pixel_spacing[1])
                 ),
             ),
-            color=_COLORS[label_map[level]],
+            color=level_colors.get(level, np.array([1.0, 1.0, 1.0], dtype=np.float32)),
             linestyle="dashed",
             linewidth=0.25,
         )
