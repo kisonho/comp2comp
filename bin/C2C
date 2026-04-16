@@ -97,9 +97,13 @@ def MuscleAdiposeTissuePipelineBuilder(args):
 
 
 def MuscleAdiposeTissueFullPipelineBuilder(args):
-    pipeline = InferencePipeline(
+    inference_classes = []
+    if args.muscle_fat_model == "voxtell_v1.1":
+        inference_classes.append(io.DicomToNifti(args.input_path))
+    inference_classes.extend(
         [io.DicomFinder(args.input_path), MuscleAdiposeTissuePipelineBuilder(args)]
     )
+    pipeline = InferencePipeline(inference_classes)
     return pipeline
 
 

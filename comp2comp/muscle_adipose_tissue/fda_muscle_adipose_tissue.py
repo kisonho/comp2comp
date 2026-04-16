@@ -16,8 +16,14 @@ from tqdm import tqdm
 from comp2comp.inference_class_base import InferenceClass
 from comp2comp.metrics.metrics import CrossSectionalArea, HounsfieldUnits
 from comp2comp.models.models import Models
-
-# from comp2comp.muscle_adipose_tissue.data import Dataset, predict
+from comp2comp.muscle_adipose_tissue.data import Dataset, predict
+from comp2comp.muscle_adipose_tissue.voxtell_utils import (
+    ensure_voxtell_checkpoint,
+    ensure_voxtell_slice_metadata,
+    is_voxtell_model,
+    predict_voxtell_volume,
+    select_voxtell_input_path,
+)
 
 NORMATIVE_VALUES = {
     "12-15": {"mean": 0.9708984375000025, "number": 128, "std": 0.14374630102575722},
@@ -65,6 +71,8 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
         self.batch_size = batch_size
         self.model_name = model_name
         self.model_type = Models.model_from_name(model_name)
+        if self.model_type is None:
+            raise ValueError(f"Unsupported muscle/adipose model: {model_name}")
 
     def forward_pass_2d(self, files):
         dataset = Dataset(files, windows=self.model_type.windows)
@@ -115,6 +123,19 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
     def __call__(self, inference_pipeline):
         inference_pipeline.muscle_adipose_tissue_model_type = self.model_type
         inference_pipeline.muscle_adipose_tissue_model_name = self.model_name
+
+        if is_voxtell_model(self.model_name):
+            nifti_path, output_path = select_voxtell_input_path(
+                inference_pipeline.output_dir
+            )
+            model_path = ensure_voxtell_checkpoint(inference_pipeline.model_dir)
+            images, preds, spacings = predict_voxtell_volume(
+                model_path=model_path,
+                nifti_path=nifti_path,
+                output_path=output_path,
+            )
+            ensure_voxtell_slice_metadata(inference_pipeline, len(images))
+            return {"images": images, "preds": preds, "spacings": spacings}
 
         if self.model_name == "stanford_v0.0.2":
             self.download_muscle_adipose_tissue_model(inference_pipeline.model_dir)
@@ -226,7 +247,7 @@ class MuscleAdiposeTissuePostProcessing(InferenceClass):
             l_argmax = np.argmax(preds, axis=-1)
             for c in range(labels.shape[-1]):
                 labels[l_argmax == c, c] = 1
-            return labels.astype(np.bool)
+            return labels.astype(bool)
         else:
             # sigmoid
             return preds >= 0.5
@@ -260,7 +281,7 @@ class MuscleAdiposeTissuePostProcessing(InferenceClass):
 
         start_time = perf_counter()
 
-        if self.model_name == "stanford_v0.0.2":
+        if self.model_name == "stanford_v0.0.2" or is_voxtell_model(self.model_name):
             masks = preds
         else:
             masks = [self.preds_to_mask(p) for p in preds]

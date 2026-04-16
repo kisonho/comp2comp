@@ -12,7 +12,7 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 import wget
-from totalsegmentatorv2.python_api import totalsegmentator
+from totalsegmentator.python_api import totalsegmentator
 
 from comp2comp.inference_class_base import InferenceClass
 

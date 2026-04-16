@@ -3,7 +3,7 @@ from pathlib import Path
 from time import time
 from typing import Union
 
-from totalsegmentatorv2.python_api import totalsegmentator
+from totalsegmentator.python_api import totalsegmentator
 
 from comp2comp.inference_class_base import InferenceClass
 

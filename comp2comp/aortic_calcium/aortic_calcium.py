@@ -13,6 +13,7 @@ from typing import Union
 import matplotlib.pyplot as plt
 import numpy as np
 import pydicom
+from pydicom.multival import MultiValue
 from scipy import ndimage
 
 # from totalsegmentator.libs import (
@@ -20,7 +21,7 @@ from scipy import ndimage
 #     nostdout,
 #     setup_nnunet,
 # )
-from totalsegmentatorv2.python_api import totalsegmentator
+from totalsegmentator.python_api import totalsegmentator
 
 from comp2comp.inference_class_base import InferenceClass
 

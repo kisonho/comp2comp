@@ -25,10 +25,13 @@ Alternatively, Comp2Comp can be installed with `pip`:
 ```bash
 git clone https://github.com/StanfordMIMI/Comp2Comp/
 cd Comp2Comp
-conda create -n c2c_env python=3.9
+conda create -n c2c_env python=3.10
 conda activate c2c_env
 pip install -e .
 ```
+
+The main install now includes VoxTell support, so `--muscle_fat_model voxtell_v1.1`
+is available anywhere Comp2Comp accepts a muscle/fat model.
 
 For installing on the Apple M1 chip, see [these instructions](https://github.com/StanfordMIMI/Comp2Comp/blob/master/docs/Local%20Implementation%20%40%20M1%20arm64%20Silicon.md).
 
@@ -60,6 +63,7 @@ Below are the inference pipelines currently supported by Comp2Comp.
 bin/C2C spine_muscle_adipose_tissue -i <path/to/input/folder>
 ```
 - input_path should contain a DICOM series or subfolders that contain DICOM series.
+- Optional: choose `--muscle_fat_model voxtell_v1.1` to run the VoxTell backend.
 
 ### Example Output Image
 <p align="center">
@@ -224,5 +228,4 @@ In addition to Comp2Comp, please consider citing TotalSegmentator:
   year={2022}
 }
 ```
-
 

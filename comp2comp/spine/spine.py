@@ -20,7 +20,7 @@ from totalsegmentator.libs import (
     nostdout,
     setup_nnunet,
 )
-from totalsegmentatorv2.python_api import totalsegmentator
+from totalsegmentator.python_api import totalsegmentator
 
 from comp2comp.inference_class_base import InferenceClass
 from comp2comp.models.models import Models

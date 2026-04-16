@@ -121,7 +121,7 @@ def _swap_muscle_imap(xs, ys, muscle_idx: int, imat_idx: int, threshold=-30.0):
     muscle_mask = (labels[..., muscle_idx] > 0.5).astype(int)
     imat_mask = labels[..., imat_idx]
 
-    imat_mask[muscle_mask.astype(np.bool) & (xs < threshold)] = 1
+    imat_mask[muscle_mask.astype(bool) & (xs < threshold)] = 1
     muscle_mask[xs < threshold] = 0
 
     labels[..., muscle_idx] = muscle_mask
