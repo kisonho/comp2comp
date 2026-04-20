@@ -79,7 +79,7 @@ class HounsfieldUnits(Metric):
         super().__init__(units)
 
     def __call__(self, mask, x, category_dim: int = None):
-        mask = mask.astype(np.bool)
+        mask = mask.astype(bool)
         if category_dim is None:
             return np.mean(x[mask])
 
@@ -95,7 +95,7 @@ class HounsfieldUnits(Metric):
 class CrossSectionalArea(Metric):
     def __call__(self, mask, spacing=None, category_dim: int = None):
         pixel_area = np.prod(spacing) if spacing else 1
-        mask = mask.astype(np.bool)
+        mask = mask.astype(bool)
         mask = flatten_non_category_dims(mask, category_dim)
 
         return pixel_area * np.count_nonzero(mask, -1) / 100.0

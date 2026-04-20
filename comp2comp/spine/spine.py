@@ -23,12 +23,14 @@ try:
     from totalsegmentator.config import setup_nnunet
 except ImportError:  # backwards compatibility with older TotalSegmentator
     from totalsegmentator.libs import setup_nnunet
-from totalsegmentatorv2.python_api import totalsegmentator
+from totalsegmentator.python_api import totalsegmentator
 
 from comp2comp.inference_class_base import InferenceClass
 from comp2comp.models.models import Models
 from comp2comp.spine import spine_utils
 from comp2comp.visualization.dicom import to_dicom
+
+TS_HEADNECK_MUSCLES_MODEL = "ts_headneck_muscles_v0.0.1"
 
 
 class SpineSegmentation(InferenceClass):
@@ -156,7 +158,6 @@ class SpineSegmentation(InferenceClass):
                     self.output_dir_segmentations, "converted_dcm.nii.gz"
                 ),
                 output=os.path.join(self.output_dir_segmentations, "segmentation.nii"),
-                task_ids=[292],
                 ml=True,
                 nr_thr_resamp=1,
                 nr_thr_saving=6,
@@ -261,14 +262,15 @@ class AxialCropper(InferenceClass):
         super().__init__()
         self.lower_level = lower_level
         self.upper_level = upper_level
-        ts_spine_full_model = Models.model_from_name("ts_spine")
-        categories = ts_spine_full_model.categories
-        try:
-            self.lower_level_index = categories[self.lower_level]
-            self.upper_level_index = categories[self.upper_level]
-        except KeyError:
-            raise ValueError("Invalid spine level.") from None
         self.save = save
+
+    def _resolve_crop_levels(self, inference_pipeline):
+        muscle_model = getattr(
+            getattr(inference_pipeline, "args", None), "muscle_fat_model", None
+        )
+        if muscle_model == TS_HEADNECK_MUSCLES_MODEL:
+            return ("C7", "C3")
+        return (self.lower_level, self.upper_level)
 
     def __call__(self, inference_pipeline):
         """
@@ -276,16 +278,34 @@ class AxialCropper(InferenceClass):
         Second dim goes from P to A.
         Third dim goes from I to S.
         """
+        lower_level, upper_level = self._resolve_crop_levels(inference_pipeline)
+        spine_model_name = getattr(
+            inference_pipeline,
+            "spine_model_name",
+            getattr(getattr(inference_pipeline, "args", None), "spine_model", None),
+        )
+        spine_model_type = Models.model_from_name(spine_model_name or "ts_spine")
+        categories = spine_model_type.categories
+
+        try:
+            lower_level_index_label = categories[lower_level]
+            upper_level_index_label = categories[upper_level]
+        except KeyError:
+            raise ValueError(
+                f"Invalid spine crop levels {lower_level}-{upper_level} for model "
+                f"{spine_model_type.model_name}."
+            ) from None
+
         segmentation = inference_pipeline.segmentation
         segmentation_data = segmentation.get_fdata()
         try:
-            upper_level_index = np.where(segmentation_data == self.upper_level_index)[
+            upper_level_index = np.where(segmentation_data == upper_level_index_label)[
                 2
             ].max()
         except:
             upper_level_index = segmentation_data.shape[2]
         try:
-            lower_level_index = np.where(segmentation_data == self.lower_level_index)[
+            lower_level_index = np.where(segmentation_data == lower_level_index_label)[
                 2
             ].min()
         except:

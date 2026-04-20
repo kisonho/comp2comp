@@ -20,7 +20,7 @@ from scipy import ndimage
 #     nostdout,
 #     setup_nnunet,
 # )
-from totalsegmentatorv2.python_api import totalsegmentator
+from totalsegmentator.python_api import totalsegmentator
 
 from comp2comp.inference_class_base import InferenceClass
 
@@ -78,7 +78,6 @@ class AortaSegmentation(InferenceClass):
         seg = totalsegmentator(
             input=os.path.join(self.output_dir_segmentations, "converted_dcm.nii.gz"),
             output=os.path.join(self.output_dir_segmentations, "segmentation.nii"),
-            task_ids=[293],
             ml=True,
             nr_thr_resamp=1,
             nr_thr_saving=6,

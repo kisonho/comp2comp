@@ -368,6 +368,8 @@ def mean_img_mask(img: np.ndarray, mask: np.ndarray, index: int):
     img = img.astype(np.float32)
     mask = mask.astype(np.float32)
     img_masked = (img * mask)[mask > 0]
+    if img_masked.size == 0:
+        return np.nan
     # mean = (rescale_slope * np.mean(img_masked)) + rescale_intercept
     # median = (rescale_slope * np.median(img_masked)) + rescale_intercept
     mean = np.mean(img_masked)

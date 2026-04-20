@@ -16,7 +16,7 @@ except ImportError:  # backwards compatibility with older TotalSegmentator
 from comp2comp.contrast_phase.contrast_inf import predict_phase
 from comp2comp.inference_class_base import InferenceClass
 
-# from totalsegmentatorv2.python_api import totalsegmentator
+# from totalsegmentator.python_api import totalsegmentator
 
 
 

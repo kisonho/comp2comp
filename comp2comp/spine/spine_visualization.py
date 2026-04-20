@@ -10,6 +10,18 @@ import numpy as np
 
 from comp2comp.visualization.detectron_visualizer import Visualizer
 
+
+def _format_hu_text(value) -> str:
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return "NA"
+
+    if not np.isfinite(numeric_value):
+        return "NA"
+
+    return f"{round(numeric_value)}"
+
 def spine_binary_segmentation_overlay(
     img_in: Union[str, Path],
     mask: Union[str, Path],
@@ -135,7 +147,7 @@ def spine_binary_segmentation_overlay(
             horizontal_alignment="left",
         )
         vis.draw_text(
-            text=f"{round(float(spine_hus[level]))}",
+            text=_format_hu_text(spine_hus[level]),
             position=(
                 mask.shape[1] - _SPINE_TEXT_OFFSET_FROM_RIGHT - 35,
                 _SPINE_TEXT_VERTICAL_SPACING * (i + 1) + _SPINE_TEXT_OFFSET_FROM_TOP,
@@ -145,7 +157,7 @@ def spine_binary_segmentation_overlay(
             horizontal_alignment="center",
         )
         vis.draw_text(
-            text=f"{round(float(seg_hus[level]))}",
+            text=_format_hu_text(seg_hus[level]),
             position=(
                 mask.shape[1] - _SPINE_TEXT_OFFSET_FROM_RIGHT,
                 _SPINE_TEXT_VERTICAL_SPACING * (i + 1) + _SPINE_TEXT_OFFSET_FROM_TOP,

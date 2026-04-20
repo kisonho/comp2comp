@@ -20,6 +20,11 @@ from comp2comp.muscle_adipose_tissue.data import Dataset, predict
 
 MULTILEVEL_STANFORD_MODEL = "stanford_v0.0.2"
 TS_ABDOMINAL_MUSCLES_MODEL = "ts_abdominal_muscles_v0.0.1"
+TS_HEADNECK_MUSCLES_MODEL = "ts_headneck_muscles_v0.0.1"
+TS_MUSCLE_ONLY_MODELS = (
+    TS_ABDOMINAL_MUSCLES_MODEL,
+    TS_HEADNECK_MUSCLES_MODEL,
+)
 
 def get_totalseg_device() -> str:
     try:
@@ -84,6 +89,29 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
             print("Muscle and adipose tissue model downloaded.")
         else:
             print("Muscle and adipose tissue model already downloaded.")
+
+    def _totalseg_task_config(self):
+        if self.model_name == TS_ABDOMINAL_MUSCLES_MODEL:
+            return {
+                "output_name": "abdominal_muscles_seg.nii.gz",
+                "task": "abdominal_muscles",
+            }
+        if self.model_name == TS_HEADNECK_MUSCLES_MODEL:
+            return {
+                "output_name": "headneck_muscles_seg.nii.gz",
+                "task": "headneck_muscles",
+            }
+        raise ValueError(f"Unsupported TotalSegmentator model: {self.model_name}")
+
+    def _build_totalseg_masks(self, preds, categories):
+        masks = []
+        for pred in preds:
+            mask = np.zeros((pred.shape[0], pred.shape[1], len(categories)))
+            for i, category in enumerate(categories):
+                if category == "muscle":
+                    mask[:, :, i] = pred > 0
+            masks.append(mask.astype(np.uint8))
+        return masks
 
     def __call__(self, inference_pipeline):
         inference_pipeline.muscle_adipose_tissue_model_type = self.model_type
@@ -154,13 +182,14 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
                 mask = mask.astype(np.uint8)
                 masks.append(mask)
             return {"images": images, "preds": masks, "spacings": spacings}
-        elif self.model_name == TS_ABDOMINAL_MUSCLES_MODEL:
-            from totalsegmentatorv2.python_api import totalsegmentator
+        elif self.model_name in TS_MUSCLE_ONLY_MODELS:
+            from totalsegmentator.python_api import totalsegmentator
 
             os.environ["SCRATCH"] = inference_pipeline.model_dir
             os.environ["TOTALSEG_WEIGHTS_PATH"] = inference_pipeline.model_dir
             device = get_totalseg_device()
             print(f"Using TotalSegmentator device: {device}")
+            task_config = self._totalseg_task_config()
 
             nifti_path = os.path.join(
                 inference_pipeline.output_dir,
@@ -170,20 +199,19 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
             output_path = os.path.join(
                 inference_pipeline.output_dir,
                 "segmentations",
-                "abdominal_muscles_seg.nii.gz",
+                task_config["output_name"],
             )
 
             seg = totalsegmentator(
                 input=nifti_path,
                 output=output_path,
-                task_ids=[294],
                 ml=True,
                 nr_thr_resamp=1,
                 nr_thr_saving=6,
                 fast=False,
                 nora_tag="None",
                 preview=False,
-                task="total",
+                task=task_config["task"],
                 roi_subset=None,
                 statistics=False,
                 radiomics=False,
@@ -219,13 +247,7 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
             ]
 
             categories = self.model_type.categories
-            masks = []
-            for pred in preds:
-                mask = np.zeros((pred.shape[0], pred.shape[1], len(categories)))
-                for i, category in enumerate(categories):
-                    if category == "muscle":
-                        mask[:, :, i] = pred > 0
-                masks.append(mask.astype(np.uint8))
+            masks = self._build_totalseg_masks(preds, categories)
             return {"images": images, "preds": masks, "spacings": spacings}
 
         else:
@@ -272,7 +294,7 @@ class MuscleAdiposeTissuePostProcessing(InferenceClass):
             l_argmax = np.argmax(preds, axis=-1)
             for c in range(labels.shape[-1]):
                 labels[l_argmax == c, c] = 1
-            return labels.astype(np.bool)
+            return labels.astype(bool)
         else:
             # sigmoid
             return preds >= 0.5
@@ -306,7 +328,7 @@ class MuscleAdiposeTissuePostProcessing(InferenceClass):
 
         start_time = perf_counter()
 
-        if self.model_name in (MULTILEVEL_STANFORD_MODEL, TS_ABDOMINAL_MUSCLES_MODEL):
+        if self.model_name in (MULTILEVEL_STANFORD_MODEL, *TS_MUSCLE_ONLY_MODELS):
             masks = preds
         else:
             masks = [self.preds_to_mask(p) for p in preds]
@@ -352,6 +374,9 @@ class MuscleAdiposeTissuePostProcessing(InferenceClass):
         Returns:
             ndarray: Filled mask.
         """
+        if np.count_nonzero(mask) == 0:
+            return np.zeros_like(mask)
+
         int_mask = ((1 - mask) > 0.5).astype(np.int8)
         components, output, stats, _ = cv2.connectedComponentsWithStats(
             int_mask, connectivity=8

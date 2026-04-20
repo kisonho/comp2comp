@@ -59,7 +59,6 @@ setup(
         "wget",
         "tensorflow",
         "totalsegmentator",
-        "totalsegmentatorv2 @ git+https://github.com/StanfordMIMI/TotalSegmentatorV2.git",
         "blosc2",
         "acvl-utils",
         "dicom2nifti<2.6",

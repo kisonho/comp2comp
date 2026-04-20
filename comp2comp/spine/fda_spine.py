@@ -12,7 +12,7 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 import wget
-from totalsegmentatorv2.python_api import totalsegmentator
+from totalsegmentator.python_api import totalsegmentator
 
 from comp2comp.inference_class_base import InferenceClass
 
@@ -54,7 +54,6 @@ class SpineSegmentation(InferenceClass):
         seg = totalsegmentator(
             input=os.path.join(self.output_dir_segmentations, "converted_dcm.nii.gz"),
             output=os.path.join(self.output_dir_segmentations, "segmentation.nii"),
-            task_ids=[292],
             ml=True,
             nr_thr_resamp=1,
             nr_thr_saving=6,

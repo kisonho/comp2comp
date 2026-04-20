@@ -1,0 +1,12 @@
+#!/bin/bash
+clear
+
+export CUDA_VISIBLE_DEVICES=5
+
+./bin/C2C spine_muscle_adipose_tissue \
+    -i "/home/qhe2/Documents/Datasets/LCTSC/" \
+    -o "outputs/" \
+    --spine_model ts_spine_full \
+    --muscle_fat_model ts_headneck_muscles_v0.0.1
+
+unset CUDA_VISIBLE_DEVICES

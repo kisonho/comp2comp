@@ -8,6 +8,7 @@ import sys
 import time
 import traceback
 from datetime import datetime
+import inspect
 from pathlib import Path
 
 from comp2comp.io import io_utils
@@ -36,6 +37,80 @@ def _configure_torch_checkpoint_loading():
             torch.serialization.add_safe_globals([scalar])
     except Exception:
         # Best effort only; env var above is the primary compatibility mechanism.
+        pass
+
+
+def _configure_nnunet_predictor_compat():
+    """Bridge TotalSegmentatorV2 to newer nnUNetPredictor signatures.
+
+    Some TotalSegmentatorV2 releases still call nnUNetPredictor with the legacy
+    keyword ``perform_everything_on_gpu``. Newer nnunetv2 versions renamed this
+    argument to ``perform_everything_on_device``.
+    """
+    try:
+        from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
+    except Exception:
+        return
+
+    try:
+        signature = inspect.signature(nnUNetPredictor.__init__)
+    except Exception:
+        return
+
+    params = signature.parameters
+    if (
+        "perform_everything_on_gpu" in params
+        or "perform_everything_on_device" not in params
+        or getattr(nnUNetPredictor.__init__, "_comp2comp_compat_wrapped", False)
+    ):
+        return
+
+    original_init = nnUNetPredictor.__init__
+
+    def compat_init(self, *args, **kwargs):
+        if (
+            "perform_everything_on_gpu" in kwargs
+            and "perform_everything_on_device" not in kwargs
+        ):
+            kwargs["perform_everything_on_device"] = kwargs.pop(
+                "perform_everything_on_gpu"
+            )
+        else:
+            kwargs.pop("perform_everything_on_gpu", None)
+        return original_init(self, *args, **kwargs)
+
+    compat_init._comp2comp_compat_wrapped = True
+    nnUNetPredictor.__init__ = compat_init
+
+
+def _configure_nnunet_paths(model_dir):
+    """Synchronize nnUNet env vars and imported module globals."""
+    model_dir = str(Path(model_dir).resolve())
+
+    os.environ["nnUNet_raw"] = model_dir
+    os.environ["nnUNet_preprocessed"] = model_dir
+    os.environ["nnUNet_results"] = model_dir
+
+    # Legacy nnUNet/TotalSegmentator variables used by older code paths.
+    os.environ.setdefault("nnUNet_raw_data_base", model_dir)
+    os.environ.setdefault("RESULTS_FOLDER", model_dir)
+
+    try:
+        import nnunetv2.paths as nnunet_paths
+
+        nnunet_paths.nnUNet_raw = model_dir
+        nnunet_paths.nnUNet_preprocessed = model_dir
+        nnunet_paths.nnUNet_results = model_dir
+    except Exception:
+        pass
+
+    try:
+        import nnunetv2.utilities.dataset_name_id_conversion as dataset_conversion
+
+        dataset_conversion.nnUNet_raw = model_dir
+        dataset_conversion.nnUNet_preprocessed = model_dir
+        dataset_conversion.nnUNet_results = model_dir
+    except Exception:
         pass
 
 
@@ -69,6 +144,9 @@ def process_2d(args, pipeline_builder):
     if not os.path.exists(model_dir):
         os.mkdir(model_dir)
 
+    _configure_nnunet_paths(model_dir)
+    _configure_nnunet_predictor_compat()
+
     pipeline = pipeline_builder(args)
 
     pipeline(output_dir=output_dir, model_dir=model_dir)
@@ -80,6 +158,9 @@ def process_3d(args, pipeline_builder):
     model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../models")
     if not os.path.exists(model_dir):
         os.mkdir(model_dir)
+
+    _configure_nnunet_paths(model_dir)
+    _configure_nnunet_predictor_compat()
 
     if args.output_path is not None:
         output_path = Path(args.output_path)
