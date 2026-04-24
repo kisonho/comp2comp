@@ -1,0 +1,17 @@
+#!/bin/bash
+clear
+
+export CUDA_VISIBLE_DEVICES=5
+
+DATA_DIR="/home/qhe2/Documents/Datasets/tcia/test/"
+OUTPUTS_DIR="outputs/tcia/ts_total"
+MODEL_ENUM="TS_TOTAL"
+
+MODEL_NAME="$(python -c 'import sys; from comp2comp.models.models import Models; print(Models[sys.argv[1]].model_name)' "$MODEL_ENUM")"
+
+python eval.py \
+    "$DATA_DIR" \
+    "$MODEL_NAME" \
+    "$OUTPUTS_DIR"
+
+unset CUDA_VISIBLE_DEVICES

@@ -47,6 +47,13 @@ class Models(enum.Enum):
         True,
         ("soft", "bone", "custom"),
     )
+    TS_TOTAL = (
+        10,
+        "ts_total",
+        {"muscle": 0, "sat": 1, "vat": 2, "imat": 3},
+        True,
+        ("soft", "bone", "custom"),
+    )
     TS_SPINE_FULL = (
         4,
         "ts_spine_full",
@@ -134,7 +141,7 @@ class Models(enum.Enum):
         """
         try:
             filename = Models.find_model_weights(self.model_name, model_dir)
-        except Exception:
+        except FileNotFoundError:
             print("Downloading muscle/fat model from hugging face")
             Path(model_dir).mkdir(parents=True, exist_ok=True)
             wget.download(
@@ -164,8 +171,13 @@ class Models(enum.Enum):
 
     @staticmethod
     def find_model_weights(file_name, model_dir):
+        filename = None
         for root, _, files in os.walk(model_dir):
             for file in files:
                 if file.startswith(file_name):
                     filename = os.path.join(root, file)
+        if filename is None:
+            raise FileNotFoundError(
+                f"Could not find model weights starting with '{file_name}' in {model_dir}"
+            )
         return filename

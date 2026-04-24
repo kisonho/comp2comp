@@ -113,6 +113,13 @@ def _configure_nnunet_paths(model_dir):
     except Exception:
         pass
 
+    try:
+        import nnunetv2.utilities.file_path_utilities as file_path_utilities
+
+        file_path_utilities.nnUNet_results = model_dir
+    except Exception:
+        pass
+
 
 def find_common_root(paths):
     paths_with_sep = [path if path.endswith("/") else path + "/" for path in paths]

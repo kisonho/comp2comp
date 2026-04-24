@@ -21,10 +21,13 @@ from comp2comp.muscle_adipose_tissue.data import Dataset, predict
 MULTILEVEL_STANFORD_MODEL = "stanford_v0.0.2"
 TS_ABDOMINAL_MUSCLES_MODEL = "ts_abdominal_muscles_v0.0.1"
 TS_HEADNECK_MUSCLES_MODEL = "ts_headneck_muscles_v0.0.1"
+TS_TOTAL_MODEL = "ts_total"
 TS_MUSCLE_ONLY_MODELS = (
     TS_ABDOMINAL_MUSCLES_MODEL,
     TS_HEADNECK_MUSCLES_MODEL,
 )
+TS_DERIVED_MUSCLE_MASK_MODELS = (*TS_MUSCLE_ONLY_MODELS, TS_TOTAL_MODEL)
+TS_TOTAL_MUSCLE_LABEL_IDS = tuple(range(80, 90))
 
 def get_totalseg_device() -> str:
     try:
@@ -101,6 +104,11 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
                 "output_name": "headneck_muscles_seg.nii.gz",
                 "task": "headneck_muscles",
             }
+        if self.model_name == TS_TOTAL_MODEL:
+            return {
+                "output_name": "total_seg.nii.gz",
+                "task": "total",
+            }
         raise ValueError(f"Unsupported TotalSegmentator model: {self.model_name}")
 
     def _build_totalseg_masks(self, preds, categories):
@@ -109,7 +117,10 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
             mask = np.zeros((pred.shape[0], pred.shape[1], len(categories)))
             for i, category in enumerate(categories):
                 if category == "muscle":
-                    mask[:, :, i] = pred > 0
+                    if self.model_name == TS_TOTAL_MODEL:
+                        mask[:, :, i] = np.isin(pred, TS_TOTAL_MUSCLE_LABEL_IDS)
+                    else:
+                        mask[:, :, i] = pred > 0
             masks.append(mask.astype(np.uint8))
         return masks
 
@@ -182,7 +193,7 @@ class MuscleAdiposeTissueSegmentation(InferenceClass):
                 mask = mask.astype(np.uint8)
                 masks.append(mask)
             return {"images": images, "preds": masks, "spacings": spacings}
-        elif self.model_name in TS_MUSCLE_ONLY_MODELS:
+        elif self.model_name in TS_DERIVED_MUSCLE_MASK_MODELS:
             from totalsegmentator.python_api import totalsegmentator
 
             os.environ["SCRATCH"] = inference_pipeline.model_dir
@@ -328,7 +339,7 @@ class MuscleAdiposeTissuePostProcessing(InferenceClass):
 
         start_time = perf_counter()
 
-        if self.model_name in (MULTILEVEL_STANFORD_MODEL, *TS_MUSCLE_ONLY_MODELS):
+        if self.model_name in (MULTILEVEL_STANFORD_MODEL, *TS_DERIVED_MUSCLE_MASK_MODELS):
             masks = preds
         else:
             masks = [self.preds_to_mask(p) for p in preds]
@@ -343,6 +354,11 @@ class MuscleAdiposeTissuePostProcessing(InferenceClass):
 
         file_idx = 0
         for mask, image in tqdm(zip(masks, images), total=len(masks)):
+            if self.model_name == TS_TOTAL_MODEL:
+                masks[file_idx] = mask
+                images[file_idx] = image
+                file_idx += 1
+                continue
             muscle_mask = mask[..., cats.index("muscle")]
             imat_mask = mask[..., cats.index("imat")]
             imat_mask = (
