@@ -22,6 +22,24 @@ class MuscleAdiposeTissueVisualizer(InferenceClass):
             "L2": [255, 128, 0],
             "L1": [0, 255, 255],
             "T12": [255, 0, 255],
+            "T11": [108, 168, 255],
+            "T10": [255, 105, 180],
+            "T9": [128, 255, 128],
+            "T8": [255, 180, 80],
+            "T7": [180, 120, 255],
+            "T6": [80, 220, 220],
+            "T5": [220, 220, 80],
+            "T4": [255, 140, 140],
+            "T3": [140, 255, 200],
+            "T2": [200, 140, 255],
+            "T1": [160, 200, 255],
+            "C7": [255, 200, 160],
+            "C6": [200, 255, 160],
+            "C5": [160, 255, 240],
+            "C4": [240, 160, 255],
+            "C3": [255, 240, 160],
+            "C2": [180, 180, 255],
+            "C1": [255, 180, 220],
         }
 
         self._muscle_fat_colors = {
@@ -97,7 +115,9 @@ class MuscleAdiposeTissueVisualizer(InferenceClass):
         )
 
         if spine:
-            spine_color = np.array(self._spine_colors[dicom_file_name]) / 255.0
+            spine_color = np.array(
+                self._spine_colors.get(dicom_file_name, [255, 255, 255])
+            ) / 255.0
             vis.draw_box(
                 box_coord=(1, 1, img_in.shape[0] - 1, img_in.shape[1] - 1),
                 alpha=1,
@@ -111,12 +131,13 @@ class MuscleAdiposeTissueVisualizer(InferenceClass):
             vis.draw_text(
                 text=dicom_file_name, position=position, color=spine_color, font_size=24
             )
-            vis.draw_binary_mask(
-                self.spine_masks[dicom_file_name],
-                color=spine_color,
-                alpha=0.9,
-                area_threshold=0,
-            )
+            if dicom_file_name in self.spine_masks:
+                vis.draw_binary_mask(
+                    self.spine_masks[dicom_file_name],
+                    color=spine_color,
+                    alpha=0.9,
+                    area_threshold=0,
+                )
 
         for idx, tissue in enumerate(result.keys()):
             alpha_val = 0.9

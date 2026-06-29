@@ -1,4 +1,5 @@
 import os
+from itertools import permutations
 from pathlib import Path
 from typing import List, Tuple
 
@@ -10,11 +11,18 @@ from huggingface_hub import snapshot_download
 VOXTELL_MODEL_NAME = "voxtell_v1.1"
 VOXTELL_REPO_ID = "mrokuss/VoxTell"
 VOXTELL_PROMPTS = (
-    "skeletal muscle",
-    "visceral adipose tissue",
-    "subcutaneous adipose tissue",
-    "intramuscular adipose tissue",
+    "oblique muscle",
+    "abdominis muscle",
+    "psoas muscle",
+    "spinalis muscle",
 )
+VOXTELL_MUSCLE_PROMPT_INDICES = (0, 1, 2, 3)
+VOXTELL_COMP2COMP_CHANNELS = {
+    "muscle": VOXTELL_MUSCLE_PROMPT_INDICES,
+    "vat": (),
+    "sat": (),
+    "imat": (),
+}
 VOXTELL_CATEGORIES = {
     "muscle": 0,
     "vat": 1,
@@ -78,14 +86,77 @@ def _transform_mask_slice(mask_slice: np.ndarray) -> np.ndarray:
     return np.transpose(np.flip(np.flip(mask_slice, axis=0), axis=1), (1, 0, 2))
 
 
-def save_combined_voxtell_segmentation(
-    segmentation: np.ndarray, image_nib: nib.Nifti1Image, output_path: str
-) -> None:
+def align_voxtell_segmentation(
+    segmentation: np.ndarray, image_shape: Tuple[int, int, int]
+) -> np.ndarray:
+    spatial_shape = segmentation.shape[1:]
+    if spatial_shape == image_shape:
+        return segmentation
+
+    for axes in permutations(range(3)):
+        if tuple(spatial_shape[axis] for axis in axes) == image_shape:
+            return np.transpose(segmentation, (0,) + tuple(axis + 1 for axis in axes))
+
+    raise ValueError(
+        "VoxTell segmentation shape does not match input image shape: "
+        f"segmentation spatial shape {spatial_shape}, image shape {image_shape}."
+    )
+
+
+def align_voxtell_segmentation_to_image(
+    segmentation: np.ndarray,
+    voxtell_shape: Tuple[int, int, int],
+    image_shape: Tuple[int, int, int],
+) -> np.ndarray:
+    segmentation = align_voxtell_segmentation(segmentation, voxtell_shape)
+    segmentation = np.transpose(segmentation, (0, 3, 2, 1))
+
+    if segmentation.shape[1:] != image_shape:
+        raise ValueError(
+            "VoxTell segmentation shape does not match input image shape after "
+            f"reorientation: segmentation spatial shape {segmentation.shape[1:]}, "
+            f"image shape {image_shape}."
+        )
+
+    return segmentation
+
+
+def combine_voxtell_segmentation(segmentation: np.ndarray) -> np.ndarray:
     combined = np.zeros(segmentation.shape[1:], dtype=np.uint8)
     for idx in range(segmentation.shape[0]):
         combined[segmentation[idx].astype(bool)] = idx + 1
+    return combined
 
-    nib.save(nib.Nifti1Image(combined, image_nib.affine, image_nib.header), output_path)
+
+def remap_voxtell_segmentation(segmentation: np.ndarray) -> np.ndarray:
+    required_channels = max(
+        idx
+        for prompt_indices in VOXTELL_COMP2COMP_CHANNELS.values()
+        for idx in prompt_indices
+    ) + 1
+    if segmentation.shape[0] < required_channels:
+        raise ValueError(
+            "VoxTell segmentation does not contain all prompt channels: "
+            f"expected at least {required_channels}, got {segmentation.shape[0]}."
+        )
+
+    mapped = np.zeros(
+        (len(VOXTELL_CATEGORIES),) + segmentation.shape[1:], dtype=np.uint8
+    )
+    for label, comp2comp_idx in VOXTELL_CATEGORIES.items():
+        prompt_indices = VOXTELL_COMP2COMP_CHANNELS[label]
+        if not prompt_indices:
+            continue
+        mapped[comp2comp_idx] = np.any(segmentation[prompt_indices].astype(bool), axis=0)
+    return mapped
+
+
+def save_combined_voxtell_segmentation(
+    segmentation: np.ndarray, reader, properties: dict, output_path: str
+) -> None:
+    combined = combine_voxtell_segmentation(segmentation)
+
+    reader.write_seg(combined, output_path, properties)
 
 
 def predict_voxtell_volume(
@@ -105,11 +176,20 @@ def predict_voxtell_volume(
     image_nib = nib.as_closest_canonical(nib.load(nifti_path))
     image = image_nib.get_fdata()
     reader = NibabelIOWithReorient()
-    voxtell_image, _ = reader.read_images([nifti_path])
+    voxtell_image, properties = reader.read_images([nifti_path])
     predictor = VoxTellPredictor(model_dir=model_path, device=device)
     segmentation = predictor.predict_single_image(voxtell_image, list(VOXTELL_PROMPTS))
+    segmentation = remap_voxtell_segmentation(segmentation)
 
-    save_combined_voxtell_segmentation(segmentation, image_nib, output_path)
+    segmentation_for_export = align_voxtell_segmentation(
+        segmentation, voxtell_image.shape[1:]
+    )
+    save_combined_voxtell_segmentation(
+        segmentation_for_export, reader, properties, output_path
+    )
+    segmentation = align_voxtell_segmentation_to_image(
+        segmentation, voxtell_image.shape[1:], image.shape
+    )
 
     images = []
     masks = []

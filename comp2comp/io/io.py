@@ -96,8 +96,8 @@ class DicomToNifti(InferenceClass):
         if self.input_path.is_dir():
             # store a dcm object for retrieving dicom tags
             dcm_files = [d for d in os.listdir(self.input_path) if d.endswith(".dcm")]
-            inference_pipeline.dcm = pydicom.read_file(
-                os.path.join(self.input_path, dcm_files[0])
+            inference_pipeline.dcm = pydicom.dcmread(
+                os.path.join(self.input_path, dcm_files[0]), force=True
             )
 
             ds = dicom_series_to_nifti(
@@ -130,13 +130,26 @@ class DicomToNifti(InferenceClass):
 
 def series_selector(dicom_path, pipeline_name=None):
     ds = pydicom.filereader.dcmread(dicom_path)
-    image_type_list = list(ds.ImageType)
+    image_type = getattr(ds, "ImageType", [])
+    if isinstance(image_type, str):
+        image_type_list = [image_type]
+    else:
+        image_type_list = [str(value) for value in image_type]
     if pipeline_name != "aaa":
         if not any("primary" in s.lower() for s in image_type_list):
             raise ValueError("Not primary image type")
         if not any("original" in s.lower() for s in image_type_list):
             raise ValueError("Not original image type")
-        if ds.ImageOrientationPatient != [1, 0, 0, 0, 1, 0]:
+        expected_orientation = [1, 0, 0, 0, 1, 0]
+        orientation = getattr(ds, "ImageOrientationPatient", None)
+        if (
+            orientation is None
+            or len(orientation) != len(expected_orientation)
+            or any(
+                abs(float(actual) - expected) > 1e-3
+                for actual, expected in zip(orientation, expected_orientation)
+            )
+        ):
             raise ValueError("Image orientation is not axial")
     else:
         print(
@@ -147,10 +160,56 @@ def series_selector(dicom_path, pipeline_name=None):
     return ds
 
 
+def select_valid_dicom_files(
+    dicom_names, pipeline_name=None
+) -> tuple[list[str], object]:
+    if pipeline_name == "aaa":
+        if not dicom_names:
+            raise ValueError(
+                "No valid DICOM files found for conversion. First rejection: "
+                "no DICOM files found"
+            )
+        return list(dicom_names), series_selector(
+            dicom_names[0], pipeline_name=pipeline_name
+        )
+
+    valid_dicom_names = []
+    selected_ds = None
+    rejection_reasons = []
+
+    for dicom_name in dicom_names:
+        try:
+            ds = series_selector(dicom_name, pipeline_name=pipeline_name)
+        except ValueError as exc:
+            rejection_reasons.append(f"{os.path.basename(dicom_name)}: {exc}")
+            continue
+
+        if selected_ds is None:
+            selected_ds = ds
+        valid_dicom_names.append(dicom_name)
+
+    if not valid_dicom_names:
+        reason = rejection_reasons[0] if rejection_reasons else "no DICOM files found"
+        raise ValueError(
+            f"No valid DICOM files found for conversion. First rejection: {reason}"
+        )
+
+    if rejection_reasons:
+        print(
+            "Skipping "
+            f"{len(rejection_reasons)} DICOM file(s) that did not match "
+            "primary/original/axial selection criteria."
+        )
+
+    return valid_dicom_names, selected_ds
+
+
 def dicom_series_to_nifti(input_path, output_file, reorient_nifti, pipeline_name=None):
     reader = sitk.ImageSeriesReader()
     dicom_names = reader.GetGDCMSeriesFileNames(str(input_path))
-    ds = series_selector(dicom_names[0], pipeline_name=pipeline_name)
+    dicom_names, ds = select_valid_dicom_files(
+        dicom_names, pipeline_name=pipeline_name
+    )
     reader.SetFileNames(dicom_names)
     image = reader.Execute()
     sitk.WriteImage(image, output_file)

@@ -53,7 +53,6 @@ class LiverSpleenPancreasSegmentation(InferenceClass):
             output=output_path,
             # input = os.path.join(self.output_dir_segmentations, "converted_dcm.nii.gz"),
             # output = os.path.join(self.output_dir_segmentations, "segmentation.nii"),
-            task_ids=[291],
             ml=True,
             nr_thr_resamp=1,
             nr_thr_saving=6,

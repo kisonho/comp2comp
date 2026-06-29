@@ -1,115 +1,7 @@
-import tempfile
-import unittest
+import numpy as np, tempfile, unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
-import sys
-import types
-
-
-if "wget" not in sys.modules:
-    wget_stub = types.ModuleType("wget")
-    wget_stub.download = lambda *args, **kwargs: None
-    sys.modules["wget"] = wget_stub
-
-if "keras" not in sys.modules:
-    keras_stub = types.ModuleType("keras")
-    keras_backend_stub = types.ModuleType("keras.backend")
-    keras_backend_stub.clear_session = lambda: None
-    keras_utils_stub = types.ModuleType("keras.utils")
-    keras_data_utils_stub = types.ModuleType("keras.utils.data_utils")
-    keras_models_stub = types.ModuleType("keras.models")
-
-    class _Sequence:
-        pass
-
-    class _OrderedEnqueuer:
-        def __init__(self, *args, **kwargs):
-            self._generator = iter(())
-
-        def start(self, *args, **kwargs):
-            return None
-
-        def get(self):
-            return self._generator
-
-    keras_utils_stub.Sequence = _Sequence
-    keras_data_utils_stub.OrderedEnqueuer = _OrderedEnqueuer
-    keras_models_stub.load_model = lambda *args, **kwargs: mock.Mock()
-
-    keras_stub.backend = keras_backend_stub
-    keras_stub.utils = keras_utils_stub
-
-    sys.modules["keras"] = keras_stub
-    sys.modules["keras.backend"] = keras_backend_stub
-    sys.modules["keras.utils"] = keras_utils_stub
-    sys.modules["keras.utils.data_utils"] = keras_data_utils_stub
-    sys.modules["keras.models"] = keras_models_stub
-
-if "cv2" not in sys.modules:
-    cv2_stub = types.ModuleType("cv2")
-    cv2_stub.__version__ = "4.0.0"
-    cv2_stub.ocl = SimpleNamespace(setUseOpenCL=lambda *args, **kwargs: None)
-    cv2_stub.connectedComponentsWithStats = lambda *args, **kwargs: (
-        1,
-        None,
-        [[0, 0, 0, 0, 0]],
-        None,
-    )
-    sys.modules["cv2"] = cv2_stub
-
-if "h5py" not in sys.modules:
-    h5py_stub = types.ModuleType("h5py")
-
-    class _File:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            return False
-
-        def create_dataset(self, *args, **kwargs):
-            return None
-
-    h5py_stub.File = _File
-    sys.modules["h5py"] = h5py_stub
-
-if "nibabel" not in sys.modules:
-    nibabel_stub = types.ModuleType("nibabel")
-    nibabel_stub.load = lambda *args, **kwargs: mock.Mock()
-    nibabel_stub.save = lambda *args, **kwargs: None
-    nibabel_stub.as_closest_canonical = lambda image: image
-    nibabel_stub.Nifti1Image = mock.Mock
-    sys.modules["nibabel"] = nibabel_stub
-
-if "pandas" not in sys.modules:
-    pandas_stub = types.ModuleType("pandas")
-    pandas_stub.DataFrame = mock.Mock
-    pandas_stub.read_csv = mock.Mock
-    sys.modules["pandas"] = pandas_stub
-
-if "tqdm" not in sys.modules:
-    tqdm_stub = types.ModuleType("tqdm")
-    tqdm_stub.tqdm = lambda iterable=None, **kwargs: iterable if iterable is not None else []
-    tqdm_auto_stub = types.ModuleType("tqdm.auto")
-    tqdm_auto_stub.tqdm = tqdm_stub.tqdm
-    tqdm_contrib_stub = types.ModuleType("tqdm.contrib")
-    tqdm_contrib_concurrent_stub = types.ModuleType("tqdm.contrib.concurrent")
-    tqdm_contrib_concurrent_stub.thread_map = lambda fn, items, **kwargs: [
-        fn(item) for item in items
-    ]
-    sys.modules["tqdm"] = tqdm_stub
-    sys.modules["tqdm.auto"] = tqdm_auto_stub
-    sys.modules["tqdm.contrib"] = tqdm_contrib_stub
-    sys.modules["tqdm.contrib.concurrent"] = tqdm_contrib_concurrent_stub
-
-if "huggingface_hub" not in sys.modules:
-    huggingface_hub_stub = types.ModuleType("huggingface_hub")
-    huggingface_hub_stub.snapshot_download = lambda *args, **kwargs: "/tmp/voxtell"
-    sys.modules["huggingface_hub"] = huggingface_hub_stub
 
 from comp2comp.models.models import Models
 from comp2comp.muscle_adipose_tissue import (
@@ -120,8 +12,16 @@ from comp2comp.muscle_adipose_tissue.voxtell_utils import (
     VOXTELL_CATEGORIES,
     VOXTELL_MODEL_NAME,
     VOXTELL_PROMPTS,
+    align_voxtell_segmentation,
+    align_voxtell_segmentation_to_image,
+    combine_voxtell_segmentation,
     ensure_voxtell_slice_metadata,
+    remap_voxtell_segmentation,
+    save_combined_voxtell_segmentation,
     select_voxtell_input_path,
+)
+from comp2comp.muscle_adipose_tissue.muscle_adipose_tissue_visualization import (
+    MuscleAdiposeTissueVisualizer,
 )
 
 
@@ -135,16 +35,34 @@ class VoxTellIntegrationTests(unittest.TestCase):
         self.assertEqual(
             VOXTELL_PROMPTS,
             (
-                "skeletal muscle",
-                "visceral adipose tissue",
-                "subcutaneous adipose tissue",
-                "intramuscular adipose tissue",
+                "oblique muscle",
+                "abdominis muscle",
+                "psoas muscle",
+                "spinalis muscle",
             ),
         )
         self.assertEqual(VOXTELL_CATEGORIES["muscle"], 0)
         self.assertEqual(VOXTELL_CATEGORIES["vat"], 1)
         self.assertEqual(VOXTELL_CATEGORIES["sat"], 2)
         self.assertEqual(VOXTELL_CATEGORIES["imat"], 3)
+
+    def test_remap_voxtell_segmentation_merges_muscle_prompts(self):
+        segmentation = np.zeros((4, 3, 5, 7), dtype=np.uint8)
+        segmentation[0, 0, 1, 2] = 1
+        segmentation[1, 1, 2, 3] = 1
+        segmentation[2, 2, 3, 4] = 1
+        segmentation[3, 0, 4, 5] = 1
+
+        remapped = remap_voxtell_segmentation(segmentation)
+
+        self.assertEqual(remapped.shape, (4, 3, 5, 7))
+        self.assertEqual(remapped[0, 0, 1, 2], 1)
+        self.assertEqual(remapped[0, 1, 2, 3], 1)
+        self.assertEqual(remapped[0, 2, 3, 4], 1)
+        self.assertEqual(remapped[0, 0, 4, 5], 1)
+        np.testing.assert_array_equal(remapped[1], np.zeros((3, 5, 7)))
+        np.testing.assert_array_equal(remapped[2], np.zeros((3, 5, 7)))
+        np.testing.assert_array_equal(remapped[3], np.zeros((3, 5, 7)))
 
     def test_select_voxtell_input_path_prefers_multilevel_volume(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -182,6 +100,71 @@ class VoxTellIntegrationTests(unittest.TestCase):
             pipeline.dicom_file_paths,
             ["slice_0000", "slice_0001", "slice_0002"],
         )
+
+    def test_align_voxtell_segmentation_matches_image_shape(self):
+        segmentation = np.zeros((4, 3, 5, 7), dtype=np.uint8)
+        segmentation[:, 1, 2, 4] = 1
+
+        aligned = align_voxtell_segmentation(segmentation, (5, 7, 3))
+
+        self.assertEqual(aligned.shape, (4, 5, 7, 3))
+        np.testing.assert_array_equal(aligned[:, 2, 4, 1], np.ones(4))
+
+    def test_align_voxtell_segmentation_to_image_preserves_in_plane_axes(self):
+        segmentation = np.zeros((4, 3, 5, 7), dtype=np.uint8)
+        segmentation[:, 1, 2, 4] = 1
+
+        aligned = align_voxtell_segmentation_to_image(
+            segmentation,
+            voxtell_shape=(3, 5, 7),
+            image_shape=(7, 5, 3),
+        )
+
+        self.assertEqual(aligned.shape, (4, 7, 5, 3))
+        np.testing.assert_array_equal(aligned[:, 4, 2, 1], np.ones(4))
+
+    def test_align_voxtell_segmentation_to_image_handles_square_slices(self):
+        segmentation = np.zeros((4, 12, 512, 512), dtype=np.uint8)
+        segmentation[:, 3, 100, 400] = 1
+
+        aligned = align_voxtell_segmentation_to_image(
+            segmentation,
+            voxtell_shape=(12, 512, 512),
+            image_shape=(512, 512, 12),
+        )
+
+        np.testing.assert_array_equal(aligned[:, 400, 100, 3], np.ones(4))
+
+    def test_combine_voxtell_segmentation_preserves_prediction_axes(self):
+        segmentation = np.zeros((4, 3, 5, 7), dtype=np.uint8)
+        segmentation[2, 1, 2, 4] = 1
+
+        combined = combine_voxtell_segmentation(segmentation)
+
+        self.assertEqual(combined.shape, (3, 5, 7))
+        self.assertEqual(combined[1, 2, 4], 3)
+
+    def test_save_combined_voxtell_segmentation_uses_reader_writer(self):
+        segmentation = np.zeros((4, 3, 5, 7), dtype=np.uint8)
+        segmentation[1, 2, 3, 4] = 1
+        reader = mock.Mock()
+        properties = {"nibabel_stuff": "metadata"}
+
+        save_combined_voxtell_segmentation(
+            segmentation, reader, properties, "/tmp/muscle_fat_seg.nii.gz"
+        )
+
+        written_seg, written_path, written_properties = reader.write_seg.call_args.args
+        self.assertEqual(written_path, "/tmp/muscle_fat_seg.nii.gz")
+        self.assertIs(written_properties, properties)
+        self.assertEqual(written_seg.shape, (3, 5, 7))
+        self.assertEqual(written_seg[2, 3, 4], 2)
+
+    def test_visualizer_has_color_for_full_spine_levels(self):
+        visualizer = MuscleAdiposeTissueVisualizer()
+
+        self.assertIn("T11", visualizer._spine_colors)
+        self.assertIn("C1", visualizer._spine_colors)
 
     @mock.patch(
         "comp2comp.muscle_adipose_tissue.muscle_adipose_tissue.ensure_voxtell_slice_metadata"

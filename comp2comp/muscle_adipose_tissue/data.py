@@ -4,8 +4,12 @@ from typing import List, Sequence
 import keras.utils as k_utils
 import numpy as np
 import pydicom
-from keras.utils.data_utils import OrderedEnqueuer
 from tqdm import tqdm
+
+try:
+    from keras.utils.data_utils import OrderedEnqueuer
+except ImportError:
+    OrderedEnqueuer = None
 
 
 def parse_windows(windows):
@@ -84,7 +88,7 @@ class Dataset(k_utils.Sequence):
 
     def __getitem__(self, idx):
         files = self._files[idx * self._batch_size : (idx + 1) * self._batch_size]
-        dcms = [pydicom.read_file(f, force=True) for f in files]
+        dcms = [pydicom.dcmread(f, force=True) for f in files]
 
         xs = [(x.pixel_array + int(x.RescaleIntercept)).astype("float32") for x in dcms]
 
@@ -187,7 +191,7 @@ def predict(
         List: List of segmentation masks.
     """
 
-    if num_workers > 0:
+    if num_workers > 0 and OrderedEnqueuer is not None:
         enqueuer = OrderedEnqueuer(
             dataset, use_multiprocessing=use_multiprocessing, shuffle=False
         )

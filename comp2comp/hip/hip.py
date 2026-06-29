@@ -8,11 +8,6 @@ from time import time
 from typing import Union
 
 import pandas as pd
-from totalsegmentator.libs import (
-    download_pretrained_weights,
-    nostdout,
-    setup_nnunet,
-)
 
 from comp2comp.hip import hip_utils
 from comp2comp.hip.hip_visualization import (
@@ -21,6 +16,11 @@ from comp2comp.hip.hip_visualization import (
 )
 from comp2comp.inference_class_base import InferenceClass
 from comp2comp.models.models import Models
+from comp2comp.totalsegmentator_compat import (
+    download_pretrained_weights,
+    nostdout,
+    setup_nnunet,
+)
 
 
 class HipSegmentation(InferenceClass):

@@ -5,13 +5,9 @@ from pathlib import Path
 from time import time
 from typing import Union
 
-from totalsegmentator.libs import (  # download_pretrained_weights,
-    nostdout,
-    setup_nnunet,
-)
-
 from comp2comp.contrast_phase.contrast_inf import predict_phase
 from comp2comp.inference_class_base import InferenceClass
+from comp2comp.totalsegmentator_compat import nostdout, setup_nnunet
 
 # from totalsegmentator.python_api import totalsegmentator
 

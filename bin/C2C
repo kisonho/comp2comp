@@ -23,7 +23,7 @@ from comp2comp.muscle_adipose_tissue import (
     muscle_adipose_tissue,
     muscle_adipose_tissue_visualization,
 )
-from comp2comp.spine import fda_spine, spine
+from comp2comp.spine import spine
 from comp2comp.utils import orientation
 from comp2comp.utils.process import process_3d
 
@@ -31,6 +31,8 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 
 # FDA approved BunkeHill BMD algorithm
 def FdaBmdPipelineBuilder(path, args):
+    from comp2comp.spine import fda_spine
+
     pipeline = InferencePipeline(
         [
             FdaSpinePipelineBuilder(path, args),
@@ -41,6 +43,8 @@ def FdaBmdPipelineBuilder(path, args):
     return pipeline
 
 def FdaSpinePipelineBuilder(path, args):
+    from comp2comp.spine import fda_spine
+
     pipeline = InferencePipeline(
         [
             fda_io.DicomToNifti(path),

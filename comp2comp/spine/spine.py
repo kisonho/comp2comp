@@ -15,16 +15,16 @@ import numpy as np
 import pandas as pd
 import wget
 from PIL import Image
-from totalsegmentator.libs import (
-    download_pretrained_weights,
-    nostdout,
-    setup_nnunet,
-)
 from totalsegmentator.python_api import totalsegmentator
 
 from comp2comp.inference_class_base import InferenceClass
 from comp2comp.models.models import Models
 from comp2comp.spine import spine_utils
+from comp2comp.totalsegmentator_compat import (
+    download_pretrained_weights,
+    nostdout,
+    setup_nnunet,
+)
 from comp2comp.visualization.dicom import to_dicom
 
 
@@ -147,13 +147,12 @@ class SpineSegmentation(InferenceClass):
         os.environ["SCRATCH"] = self.model_dir
         os.environ["TOTALSEG_WEIGHTS_PATH"] = self.model_dir
 
-        if self.model_name == "ts_spine":
+        if self.model_name in ("ts_spine", "ts_spine_full"):
             seg = totalsegmentator(
                 input=os.path.join(
                     self.output_dir_segmentations, "converted_dcm.nii.gz"
                 ),
                 output=os.path.join(self.output_dir_segmentations, "segmentation.nii"),
-                task_ids=[292],
                 ml=True,
                 nr_thr_resamp=1,
                 nr_thr_saving=6,
@@ -176,7 +175,7 @@ class SpineSegmentation(InferenceClass):
                 license_number=None,
                 statistics_exclude_masks_at_border=True,
                 no_derived_masks=False,
-                v1_order=False,
+                v1_order=self.model_name == "ts_spine_full",
             )
 
             img = None
@@ -225,6 +224,13 @@ class SpineSegmentation(InferenceClass):
                     verbose=False,
                     test=0,
                 )
+
+        else:
+            valid_models = ["ts_spine", "ts_spine_full", "stanford_spine_v0.0.1"]
+            raise ValueError(
+                f"Invalid spine model '{self.model_name}'. "
+                f"Expected one of: {', '.join(valid_models)}."
+            )
 
         end = time()
 
@@ -486,28 +492,26 @@ class SpineMuscleAdiposeTissueReport(InferenceClass):
 
     def __init__(self):
         super().__init__()
-        self.image_files = [
-            "spine_coronal.png",
-            "spine_sagittal.png",
-            "T12.png",
-            "L1.png",
-            "L2.png",
-            "L3.png",
-            "L4.png",
-            "L5.png",
-        ]
+        self.reference_image_files = ["spine_coronal.png", "spine_sagittal.png"]
 
     def __call__(self, inference_pipeline):
         image_dir = Path(inference_pipeline.output_dir) / "images"
-        self.generate_panel(image_dir)
+        levels = list(getattr(inference_pipeline, "rois", {}).keys())
+        self.generate_panel(image_dir, levels=levels)
         return {}
 
-    def generate_panel(self, image_dir: Union[str, Path]):
+    def generate_panel(self, image_dir: Union[str, Path], levels=None):
         """Generate panel.
         Args:
             image_dir (Union[str, Path]): Path to the image directory.
+            levels (Iterable[str]): Segmented spine levels to include.
         """
-        image_files = [os.path.join(image_dir, path) for path in self.image_files]
+        image_dir = Path(image_dir)
+        level_files = self._find_level_image_files(image_dir, levels)
+        image_files = [
+            str(image_dir / path)
+            for path in self.reference_image_files
+        ] + [str(path) for path in level_files]
         # construct a list which includes only the images that exist
         image_files = [path for path in image_files if os.path.exists(path)]
 
@@ -539,3 +543,32 @@ class SpineMuscleAdiposeTissueReport(InferenceClass):
         im_cor.close()
         im_sag.close()
         new_im.close()
+
+    def _find_level_image_files(self, image_dir: Path, levels=None):
+        if levels:
+            level_names = self._sort_spine_levels(levels)
+        else:
+            level_names = self._sort_spine_levels(
+                path.stem
+                for path in image_dir.glob("*.png")
+                if self._is_spine_level(path.stem)
+            )
+        return [image_dir / f"{level}.png" for level in level_names]
+
+    def _sort_spine_levels(self, levels):
+        unique_levels = {level for level in levels if self._is_spine_level(level)}
+        return sorted(unique_levels, key=self._spine_level_sort_key)
+
+    def _spine_level_sort_key(self, level):
+        region = level[0]
+        number = int(level[1:])
+        region_order = {"C": 0, "T": 1, "L": 2}
+        return (region_order.get(region, 99), number)
+
+    def _is_spine_level(self, level):
+        return (
+            len(level) >= 2
+            and level[0] in {"C", "T", "L"}
+            and level[1:].isdigit()
+            and level in Models.TS_SPINE_FULL.categories
+        )
