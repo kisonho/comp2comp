@@ -45,7 +45,9 @@ setup(
     install_requires=[
         "pydicom",
         "moviepy",
+        "monai>=1.3,<1.4",
         "numpy==1.23.5",
+        "pynrrd",
         "h5py",
         "tabulate",
         "tqdm",

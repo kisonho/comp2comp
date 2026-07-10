@@ -1,0 +1,23 @@
+#!/bin/bash
+
+clear
+
+export CUDA_VISIBLE_DEVICES=0
+export KERAS_BACKEND=torch
+export TF_CPP_MIN_LOG_LEVEL=1
+
+python train.py \
+    ~/Documents/Datasets/TCIA/processed/train/ \
+    models/tcia/tcia_seg_uncliped.keras \
+    models/tcia/tcia_decoder_uncliped.keras \
+    --val_dataset_dir ~/Documents/Datasets/TCIA/processed/test/ \
+    --preprocessed \
+    -e 300 \
+    --unfreeze_decoder \
+    --unfreeze_seg \
+    --recompile \
+    --exp tcia_decoder_uncliped.exp \
+    # --replace_experiment \
+    # --unfreeze_encoder \
+
+unset CUDA_VISIBLE_DEVICES

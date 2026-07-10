@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -euo pipefail
+
+dataset_dir="${1:-$HOME/Documents/Datasets/TCIA/test/}"
+output_dir="${2:-$HOME/Documents/Datasets/TCIA/processed/test/}"
+
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
+export TF_CPP_MIN_LOG_LEVEL=1
+
+python -m data "$dataset_dir" "$output_dir"
