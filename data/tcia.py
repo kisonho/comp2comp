@@ -3,11 +3,14 @@
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Union
+from typing import cast
 
 import nrrd, numpy as np, torch
-from monai.data import Dataset, NrrdReader
-from monai.transforms import EnsureType, LoadImage, Resize, ScaleIntensityRange
+from monai.data.dataset import Dataset
+from monai.data.image_reader import NrrdReader
+from monai.transforms.io.array import LoadImage
+from monai.transforms.spatial.array import Resize
+from monai.transforms.intensity.array import ScaleIntensityRange
 from tqdm import tqdm
 
 
@@ -19,7 +22,8 @@ class _Slice:
 
 class TCIA(Dataset):
     """Labeled axial slices from paired TCIA NRRD volumes."""
-
+    _load_image: LoadImage
+    return_path: bool
     IMAGE_FILENAME = "CT_IMAGE.nrrd"
     SEGMENTATION_FILENAME = "segmented_tissues_final.nrrd"
     LEAST_LABELED_SLICES_PER_SAMPLE = 1
@@ -31,7 +35,7 @@ class TCIA(Dataset):
     MODEL_WINDOWS = ("soft", "bone", "custom")
     MODEL_SIZE = (512, 512)
 
-    def __init__(self, root_dir: Union[str, Path]) -> None:
+    def __init__(self, root_dir: str | Path, *, return_path: bool = False) -> None:
         self._root_dir = Path(root_dir).expanduser().resolve()
         if not self._root_dir.is_dir():
             raise NotADirectoryError(
@@ -40,7 +44,6 @@ class TCIA(Dataset):
 
         reader = NrrdReader(dtype=np.float32, index_order="F")
         self._load_image = LoadImage(reader=reader, image_only=True, dtype=np.float32)
-        self._ensure_tensor = EnsureType(data_type="tensor", track_meta=False)
         self._resize_image = Resize(
             self.MODEL_SIZE, mode="bilinear", align_corners=False
         )
@@ -61,10 +64,9 @@ class TCIA(Dataset):
         self._slices: list[_Slice] = []
         self._sample_ranges: list[range] = []
         sample_dirs = self._find_sample_dirs()
-        if not sample_dirs:
-            raise FileNotFoundError(
-                f"No TCIA sample folders found under {self._root_dir}"
-            )
+        
+        if return_path:
+            raise NotImplementedError("TCIA dataset does not support return the patient path.")
 
         for sample_dir in tqdm(sample_dirs, desc="Indexing TCIA samples"):
             start = len(self._slices)
@@ -103,7 +105,7 @@ class TCIA(Dataset):
                 f"Missing {', '.join(missing)} in TCIA sample {sample_dir}"
             )
 
-        segmentation = self._ensure_tensor(self._load_image(segmentation_path))
+        segmentation = cast(torch.Tensor, self._load_image(segmentation_path))
         if segmentation.ndim != 3:
             raise ValueError(
                 f"Expected a 3D segmentation in {segmentation_path}, "
@@ -133,12 +135,8 @@ class TCIA(Dataset):
 
     @lru_cache(maxsize=1)
     def _load_sample(self, sample_dir: Path) -> tuple[torch.Tensor, torch.Tensor]:
-        image = self._ensure_tensor(
-            self._load_image(sample_dir / self.IMAGE_FILENAME)
-        )
-        segmentation = self._ensure_tensor(
-            self._load_image(sample_dir / self.SEGMENTATION_FILENAME)
-        )
+        image = cast(torch.Tensor, self._load_image(sample_dir / self.IMAGE_FILENAME))
+        segmentation = cast(torch.Tensor, self._load_image(sample_dir / self.SEGMENTATION_FILENAME))
         return image, segmentation
 
     def _transform_slice(self, sample: _Slice) -> tuple[torch.Tensor, torch.Tensor]:
@@ -152,10 +150,6 @@ class TCIA(Dataset):
         if tuple(image_tensor.shape[1:]) != self.MODEL_SIZE:
             image_tensor = self._resize_image(image_tensor)
             segmentation_tensor = self._resize_segmentation(segmentation_tensor)
-        image_tensor = self._ensure_tensor(
-            image_tensor.movedim(0, -1).contiguous()
-        )
-        segmentation_tensor = self._ensure_tensor(
-            segmentation_tensor.squeeze(0).long()
-        )
+        image_tensor = image_tensor.movedim(0, -1).contiguous()
+        segmentation_tensor = segmentation_tensor.squeeze(0).long()
         return image_tensor, segmentation_tensor

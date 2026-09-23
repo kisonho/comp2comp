@@ -18,13 +18,14 @@ class _Slice:
 
 class ProcessedTCIA(Dataset):
     """Labeled TCIA slices produced by ``process.py``."""
+    return_path: bool
 
     IMAGE_FILENAME = "images.npy"
     MASK_FILENAME = "masks.npy"
     SLICE_INDICES_FILENAME = "slice_indices.npy"
     IMAGE_SHAPE = (512, 512, 3)
 
-    def __init__(self, root_dir: Union[str, Path]) -> None:
+    def __init__(self, root_dir: str | Path, *, return_path: bool = False) -> None:
         self._root_dir = Path(root_dir).expanduser().resolve()
         if not self._root_dir.is_dir():
             raise NotADirectoryError(
@@ -33,6 +34,7 @@ class ProcessedTCIA(Dataset):
 
         self._slices: list[_Slice] = []
         self._sample_ranges: list[range] = []
+        self.return_path = return_path
         patient_dirs = self._find_patient_dirs()
         if not patient_dirs:
             raise FileNotFoundError(
@@ -119,7 +121,7 @@ class ProcessedTCIA(Dataset):
     def __len__(self) -> int:
         return len(self._slices)
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, str]:
         sample = self._slices[index]
         images, masks = self._load_patient(sample.patient_dir)
         image = torch.from_numpy(
@@ -128,4 +130,4 @@ class ProcessedTCIA(Dataset):
         mask = torch.from_numpy(
             np.array(masks[sample.index], dtype=np.int64, copy=True)
         )
-        return image, mask
+        return (image, mask, str(sample.patient_dir)) if self.return_path else (image, mask)

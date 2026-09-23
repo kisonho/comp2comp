@@ -1,16 +1,17 @@
 """Fine-tune a pretrained Stanford nnUNet Keras model."""
 
-import argparse, gc, keras, os, random, torch
+import argparse, gc, os, random, torch
 from collections.abc import Iterator
-from typing import Union, cast
+from keras import activations, callbacks, layers, losses, metrics, models, Model
+from typing import Any, Union, cast
 
-from torch.utils.data import DataLoader, Sampler
+from torch.utils.data import DataLoader, Sampler, Subset
 from torchmanager.configs import Configs as BaseConfigs
 from torchmanager_core import view
 
+import data
 from comp2comp.finetune.metrics import SparseMeanDice
 from comp2comp.finetune.optim import LayerwiseAdam
-from data import ProcessedTCIA, TCIA
 
 
 ArgumentParser = Union[argparse.ArgumentParser, argparse._ArgumentGroup]
@@ -19,14 +20,28 @@ ArgumentParser = Union[argparse.ArgumentParser, argparse._ArgumentGroup]
 class PatientSampler(Sampler[int]):
     """Shuffle patients and slices without interleaving patient volumes."""
 
-    def __init__(self, dataset: ProcessedTCIA) -> None:
+    def __init__(self, dataset: Subset[object]) -> None:
         self.dataset = dataset
+        parent_dataset = cast(
+            data.ProcessedTCIA | data.TCIA,
+            dataset.dataset,
+        )
+        parent_ranges = parent_dataset.sample_ranges
+        parent_to_patient = {
+            index: patient_index
+            for patient_index, sample_range in enumerate(parent_ranges)
+            for index in sample_range
+        }
+        self.sample_indices: list[list[int]] = [[] for _ in parent_ranges]
+        for subset_index, parent_index in enumerate(dataset.indices):
+            self.sample_indices[parent_to_patient[parent_index]].append(subset_index)
+        self.sample_indices = [indices for indices in self.sample_indices if indices]
 
     def __iter__(self) -> Iterator[int]:
-        sample_ranges = list(self.dataset.sample_ranges)
-        random.shuffle(sample_ranges)
-        for sample_range in sample_ranges:
-            indices = list(sample_range)
+        sample_indices = list(self.sample_indices)
+        random.shuffle(sample_indices)
+        for sample in sample_indices:
+            indices = list(sample)
             random.shuffle(indices)
             yield from indices
 
@@ -34,7 +49,7 @@ class PatientSampler(Sampler[int]):
         return len(self.dataset)
 
 
-class ClearCudaCache(keras.callbacks.Callback):
+class ClearCudaCache(callbacks.Callback):
     """Release unused cached CUDA memory after each training epoch."""
 
     def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
@@ -43,15 +58,34 @@ class ClearCudaCache(keras.callbacks.Callback):
             torch.cuda.empty_cache()
 
 
+class KerasLogger(callbacks.Callback):
+    """Write Keras epoch metrics through the application logger."""
+    params: dict[str, Any]
+
+    def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
+        values = logs or {}
+        metrics_text = ", ".join(
+            f"{name}={float(value):.4f}" for name, value in values.items()
+        )
+        epoch_count = self.params.get("epochs")
+        epoch_text = f"Epoch {epoch + 1}"
+        if epoch_count is not None:
+            epoch_text += f"/{epoch_count}"
+        print()
+        view.logger.info(
+            f"{epoch_text}: {metrics_text}" if metrics_text else epoch_text
+        )
+
+
 class TrainingConfigs(BaseConfigs):
     """Command-line configurations for fine-tuning."""
 
     dataset_dir: str
-    val_dataset_dir: str
     pretrained_model: str
     output_model: str
     batch_size: int
     epoch: int
+    fold: int
     lr: float
     preprocessed: bool
     recompile: bool
@@ -63,18 +97,17 @@ class TrainingConfigs(BaseConfigs):
         """Normalize paths and validate scalar arguments."""
         super().format_arguments()
         self.dataset_dir = os.path.abspath(os.path.expanduser(self.dataset_dir))
-        self.val_dataset_dir = os.path.abspath(
-            os.path.expanduser(self.val_dataset_dir)
-        )
         self.pretrained_model = os.path.abspath(
             os.path.expanduser(self.pretrained_model)
         )
         self.output_model = os.path.abspath(os.path.expanduser(self.output_model))
 
         if self.batch_size < 1:
-            raise ValueError("batch_size must be a positive integer")
+            raise ValueError(f"Batch size must be a positive integer, got {self.batch_size}.")
         if self.epoch < 1:
-            raise ValueError("epoch must be a positive integer")
+            raise ValueError(f"Epoch must be a positive integer, got {self.epoch}.")
+        if self.fold > 9 or self.fold < 0:
+            raise ValueError(f"Cross validation fold index must be in range [0, 9], got {self.fold}.")
 
     @staticmethod
     def get_arguments(parser: ArgumentParser = argparse.ArgumentParser()) -> ArgumentParser:
@@ -85,16 +118,18 @@ class TrainingConfigs(BaseConfigs):
 
         dataset_args = parser.add_argument_group("Dataset Arguments")
         dataset_args.add_argument(
-            "--val_dataset_dir",
-            required=True,
-            help="Processed validation dataset directory",
-        )
-        dataset_args.add_argument(
             "-b",
             "--batch_size",
             type=int,
             default=32,
             help="Training batch size (default: 32)",
+        )
+        dataset_args.add_argument(
+            "-f",
+            "--fold",
+            type=int,
+            default=0,
+            help="The cross validation fold index (default: 0)",
         )
         dataset_args.add_argument(
             "--preprocessed",
@@ -141,18 +176,16 @@ class TrainingConfigs(BaseConfigs):
 
     def show_settings(self) -> None:
         """Print the resolved training settings."""
-        view.logger.info(f"Dataset directory: {self.dataset_dir}")
-        view.logger.info(f"Validation dataset directory: {self.val_dataset_dir}")
+        view.logger.info(f"Dataset: dataset_dir={self.dataset_dir}, fold={self.fold}, preprocessed={self.preprocessed}")
         view.logger.info(f"Pretrained model: {self.pretrained_model}")
         view.logger.info(f"Output model: {self.output_model}")
-        view.logger.info(f"Training arguments: batch_size={self.batch_size}, epochs={self.epoch}, lr={self.lr}, unfreeze_decoder={self.unfreeze_decoder}, recompile={self.recompile}")
+        view.logger.info(f"Training arguments: batch_size={self.batch_size}, epochs={self.epoch}, lr={self.lr}, unfreeze_seg={self.unfreeze_seg}, unfreeze_decoder={self.unfreeze_decoder}, unfreeze_encoder={self.unfreeze_encoder}, recompile={self.recompile}")
 
 
-def train(configs: TrainingConfigs) -> keras.Model:
+def train(configs: TrainingConfigs) -> Model:
     """Fine-tune and save the configured Keras model."""
     # normalize directory
     dataset_dir = configs.dataset_dir
-    val_dataset_dir = configs.val_dataset_dir
     pretrained_model = configs.pretrained_model
     output_model = configs.output_model
     experiment_dir = configs.experiment
@@ -161,7 +194,7 @@ def train(configs: TrainingConfigs) -> keras.Model:
     tensorboard_dir = os.path.join("experiments", experiment_dir, "data")
 
     # load dataset
-    dataset = ProcessedTCIA(dataset_dir) if configs.preprocessed else TCIA(dataset_dir)
+    dataset, val_dataset = data.load(dataset_dir, preprocessed=configs.preprocessed, fold_idx=configs.fold)
     data_loader = DataLoader(
         dataset,
         batch_size=configs.batch_size,
@@ -171,7 +204,6 @@ def train(configs: TrainingConfigs) -> keras.Model:
         persistent_workers=True,
         prefetch_factor=2,
     )
-    val_dataset = ProcessedTCIA(val_dataset_dir) if configs.preprocessed else TCIA(val_dataset_dir)
     val_data_loader = DataLoader(
         val_dataset,
         batch_size=configs.batch_size,
@@ -183,21 +215,37 @@ def train(configs: TrainingConfigs) -> keras.Model:
     )
 
     # load model
-    base_model = cast(keras.Model, keras.models.load_model(pretrained_model))
+    base_model = cast(Model, models.load_model(pretrained_model))
     view.logger.info("Pre-trained model loaded.")
     num_classes = cast(int, base_model.output_shape[-1])
+    output_layer = base_model.layers[-1]
+    if not isinstance(output_layer, layers.Conv2D):
+        raise TypeError(
+            "Expected the segmentation output layer to be Conv2D, got "
+            f"{type(output_layer).__name__}."
+        )
+
+    # With the Keras Torch backend, SoftmaxBackward can return a strided
+    # gradient that Conv2D's CUDA backward kernel rejects with
+    # ``RuntimeError: grad_input must be contiguous``. Computing sparse
+    # cross-entropy directly from logits avoids that backend-specific layout
+    # issue and is also more numerically stable. This assignment is harmless
+    # when resuming one of our logits-based training checkpoints.
+    output_layer.activation = activations.linear
+    training_loss = losses.SparseCategoricalCrossentropy(from_logits=True)
     base_model.compile(
-        loss=keras.losses.SparseCategoricalCrossentropy(),
+        loss=training_loss,
         metrics=[
-            keras.metrics.SparseCategoricalAccuracy(name="accuracy"),
+            metrics.SparseCategoricalAccuracy(name="accuracy"),
             SparseMeanDice(num_classes=num_classes),
         ],
     )
     view.logger.info("Testing pre-trained model...")
-    pretrained_results = base_model.evaluate(
+    pretrained_results = cast(dict[str, float], base_model.evaluate(
         val_data_loader,
         return_dict=True,
-    )
+        verbose="0",
+    ))
     view.logger.info(
         "Pre-trained test results: "
         + ", ".join(
@@ -211,7 +259,7 @@ def train(configs: TrainingConfigs) -> keras.Model:
         (
             index
             for index, layer in enumerate(base_model.layers)
-            if isinstance(layer, keras.layers.Conv2DTranspose)
+            if isinstance(layer, layers.Conv2DTranspose)
         ),
         len(base_model.layers) - 1,
     )
@@ -236,52 +284,41 @@ def train(configs: TrainingConfigs) -> keras.Model:
         for variable in layer.weights:
             variable_path = getattr(variable, "path", variable.name)
             variable_lr_multipliers[variable_path] = multiplier
-    # segmentation_output = keras.layers.Conv2D(
-    #     filters=num_classes,
-    #     kernel_size=1,
-    #     activation="softmax",
-    #     name="segmentation_head",
-    # )(base_model.layers[-1].input)
-    # model = keras.Model(
-    #     inputs=base_model.input,
-    #     outputs=segmentation_output,
-    #     name=base_model.name,
-    # )
     if configs.recompile:
         model.compile(
             optimizer=LayerwiseAdam(
                 learning_rate=configs.lr,
                 variable_lr_multipliers=variable_lr_multipliers,
             ),
-            loss=keras.losses.SparseCategoricalCrossentropy(),
+            loss=training_loss,
             metrics=[
-                keras.metrics.SparseCategoricalAccuracy(name="accuracy"),
+                metrics.SparseCategoricalAccuracy(name="accuracy"),
                 SparseMeanDice(num_classes=num_classes),
             ],
         )
-    callbacks = [
-        keras.callbacks.ModelCheckpoint(
+    callbacks_list = [
+        callbacks.ModelCheckpoint(
             filepath=best_ckpt_path,
             monitor="val_dice",
             mode="max",
             save_best_only=True,
             save_weights_only=False,
             save_freq="epoch",
-            verbose=1,
         ),
-        keras.callbacks.ModelCheckpoint(
+        callbacks.ModelCheckpoint(
             filepath=last_ckpt_path,
             save_weights_only=False,
             save_freq="epoch",
-            verbose=1,
+            verbose=0,
         ),
-        keras.callbacks.TensorBoard(
+        callbacks.TensorBoard(
             log_dir=str(tensorboard_dir),
             histogram_freq=0,
             write_graph=False,
             update_freq="epoch",
             profile_batch=0,
         ),
+        KerasLogger(),
         ClearCudaCache(),
     ]
 
@@ -291,9 +328,38 @@ def train(configs: TrainingConfigs) -> keras.Model:
         data_loader,
         epochs=configs.epoch,
         validation_data=val_data_loader,
-        callbacks=callbacks,
+        callbacks=callbacks_list,
     )
 
+    model = cast(Model, models.load_model(best_ckpt_path))
+    best_results = cast(dict[str, float], model.evaluate(
+        val_data_loader,
+        return_dict=True,
+    ))
+    view.logger.info(
+        "Best checkpoint validation results: "
+        + ", ".join(
+            f"{name}={float(value):.4f}"
+            for name, value in best_results.items()
+        )
+    )
+
+    # Keep the exported inference model compatible with the pretrained model:
+    # training checkpoints emit logits, while the requested output emits probabilities.
+    output_layer = model.layers[-1]
+    if not isinstance(output_layer, layers.Conv2D):
+        raise TypeError(
+            "Expected the segmentation output layer to be Conv2D, got "
+            f"{type(output_layer).__name__}."
+        )
+    output_layer.activation = activations.softmax
+    model.compile(
+        loss=losses.SparseCategoricalCrossentropy(),
+        metrics=[
+            metrics.SparseCategoricalAccuracy(name="accuracy"),
+            SparseMeanDice(num_classes=num_classes),
+        ],
+    )
     model.save(output_model)
     view.logger.info("Training finished!")
     return model

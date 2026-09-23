@@ -1,10 +1,101 @@
 import enum
+import importlib
+import importlib.util
+import json
 import os
+import sys
+import tempfile
+import types
+import zipfile
 from pathlib import Path
 from typing import Dict, Sequence
 
 import wget
 from keras.models import load_model
+
+
+def _normalize_keras_config_for_legacy_runtime(obj):
+    if isinstance(obj, dict):
+        if obj.get("class_name") == "InputLayer":
+            config = obj.get("config", {})
+            if "batch_shape" in config and "batch_input_shape" not in config:
+                config["batch_input_shape"] = config.pop("batch_shape")
+            config.pop("optional", None)
+        for value in obj.values():
+            _normalize_keras_config_for_legacy_runtime(value)
+    elif isinstance(obj, list):
+        for value in obj:
+            _normalize_keras_config_for_legacy_runtime(value)
+
+
+def _legacy_compatible_keras_archive(filename):
+    if not str(filename).endswith(".keras"):
+        return filename
+
+    with zipfile.ZipFile(filename, "r") as source:
+        config = json.loads(source.read("config.json"))
+        before = json.dumps(config, sort_keys=True)
+        _normalize_keras_config_for_legacy_runtime(config)
+        after = json.dumps(config, sort_keys=True)
+        if before == after:
+            return filename
+
+        patched = tempfile.NamedTemporaryFile(
+            prefix=f"{Path(filename).stem}_", suffix=".keras", delete=False
+        )
+        patched.close()
+        with zipfile.ZipFile(patched.name, "w") as target:
+            for item in source.infolist():
+                data = source.read(item.filename)
+                if item.filename == "config.json":
+                    data = json.dumps(config).encode("utf-8")
+                target.writestr(item, data)
+    return patched.name
+
+
+def _install_keras_src_functional_alias():
+    """Allow Keras 3 archives to load in Keras builds without ``keras.src``."""
+    existing = sys.modules.get("keras.src.models.functional")
+    if existing is not None and hasattr(existing, "Functional"):
+        return
+
+    try:
+        if importlib.util.find_spec("keras.src.models.functional") is not None:
+            return
+    except (ModuleNotFoundError, ValueError):
+        pass
+
+    functional_cls = None
+    for module_name in (
+        "keras.engine.functional",
+        "tensorflow.keras.engine.functional",
+        "tensorflow.python.keras.engine.functional",
+    ):
+        try:
+            module = importlib.import_module(module_name)
+            functional_cls = getattr(module, "Functional", None)
+        except Exception:
+            continue
+        if functional_cls is not None:
+            break
+
+    if functional_cls is None:
+        from keras.models import Model
+
+        functional_cls = Model
+
+    keras_src = sys.modules.setdefault("keras.src", types.ModuleType("keras.src"))
+    keras_src_models = sys.modules.setdefault(
+        "keras.src.models", types.ModuleType("keras.src.models")
+    )
+    keras_src_functional = types.ModuleType("keras.src.models.functional")
+    keras_src_functional.__spec__ = importlib.util.spec_from_loader(
+        "keras.src.models.functional", loader=None
+    )
+    keras_src_functional.Functional = functional_cls
+    keras_src.models = keras_src_models
+    keras_src_models.functional = keras_src_functional
+    sys.modules["keras.src.models.functional"] = keras_src_functional
 
 
 class Models(enum.Enum):
@@ -30,6 +121,13 @@ class Models(enum.Enum):
         3, 
         "stanford_v0.0.2",
         {"muscle": 4, "sat": 1, "vat": 2, "imat": 3},
+        True,
+        ("soft", "bone", "custom"),
+    )
+    TCIA = (
+        8,
+        "tcia",
+        {"muscle": 1, "vat": 3, "sat": 4, "imat": 5},
         True,
         ("soft", "bone", "custom"),
     )
@@ -131,7 +229,8 @@ class Models(enum.Enum):
             print("")
 
         print("Loading muscle/fat model from {}".format(filename))
-        return load_model(filename)
+        _install_keras_src_functional_alias()
+        return load_model(_legacy_compatible_keras_archive(filename), compile=False)
 
     @staticmethod
     def model_from_name(model_name):
@@ -150,8 +249,14 @@ class Models(enum.Enum):
 
     @staticmethod
     def find_model_weights(file_name, model_dir):
+        fallback_filename = None
+        exact_filenames = {f"{file_name}.h5", f"{file_name}.keras"}
         for root, _, files in os.walk(model_dir):
-            for file in files:
+            for file in sorted(files):
+                if file in exact_filenames:
+                    return os.path.join(root, file)
                 if file.startswith(file_name):
-                    filename = os.path.join(root, file)
-        return filename
+                    fallback_filename = os.path.join(root, file)
+        if fallback_filename is None:
+            raise FileNotFoundError(f"No model weights found for {file_name}")
+        return fallback_filename

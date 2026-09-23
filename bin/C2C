@@ -84,7 +84,9 @@ def MuscleAdiposeTissuePipelineBuilder(args):
     pipeline = InferencePipeline(
         [
             muscle_adipose_tissue.MuscleAdiposeTissueSegmentation(
-                16, args.muscle_fat_model
+                16,
+                args.muscle_fat_model,
+                backup_model_name=getattr(args, "backup_muscle_fat_model", None),
             ),
             muscle_adipose_tissue.MuscleAdiposeTissuePostProcessing(),
             muscle_adipose_tissue.MuscleAdiposeTissueComputeMetrics(),
@@ -221,6 +223,9 @@ def argument_parser():
     muscle_adipose_tissue_parser.add_argument(
         "--muscle_fat_model", default="abCT_v0.0.1", type=str
     )
+    muscle_adipose_tissue_parser.add_argument(
+        "--backup_muscle_fat_model", default=None, type=str
+    )
 
     # Spine
     spine_parser = subparsers.add_parser("spine", parents=[base_parser])
@@ -232,6 +237,9 @@ def argument_parser():
     )
     spine_muscle_adipose_tissue_parser.add_argument(
         "--muscle_fat_model", default="stanford_v0.0.2", type=str
+    )
+    spine_muscle_adipose_tissue_parser.add_argument(
+        "--backup_muscle_fat_model", default=None, type=str
     )
     spine_muscle_adipose_tissue_parser.add_argument(
         "--spine_model", default="stanford_spine_v0.0.1", type=str
@@ -301,6 +309,9 @@ def argument_parser():
         "--muscle_fat_model",
         default="abCT_v0.0.1",
         type=str,
+    )
+    all_parser.add_argument(
+        "--backup_muscle_fat_model", default=None, type=str
     )
     all_parser.add_argument(
         "--spine_model",

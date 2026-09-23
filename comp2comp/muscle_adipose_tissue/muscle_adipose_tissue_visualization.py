@@ -16,6 +16,13 @@ class MuscleAdiposeTissueVisualizer(InferenceClass):
         super().__init__()
 
         self._spine_colors = {
+            "C1": [255, 0, 0],
+            "C2": [255, 128, 0],
+            "C3": [255, 255, 0],
+            "C4": [0, 255, 0],
+            "C5": [0, 255, 255],
+            "C6": [0, 128, 255],
+            "C7": [128, 0, 255],
             "L5": [255, 0, 0],
             "L4": [0, 255, 0],
             "L3": [255, 255, 0],
@@ -97,7 +104,9 @@ class MuscleAdiposeTissueVisualizer(InferenceClass):
         )
 
         if spine:
-            spine_color = np.array(self._spine_colors[dicom_file_name]) / 255.0
+            spine_color = np.array(
+                self._spine_colors.get(dicom_file_name, [255, 255, 255])
+            ) / 255.0
             vis.draw_box(
                 box_coord=(1, 1, img_in.shape[0] - 1, img_in.shape[1] - 1),
                 alpha=1,

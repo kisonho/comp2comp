@@ -20,7 +20,7 @@ from totalsegmentator.libs import (
     nostdout,
     setup_nnunet,
 )
-from totalsegmentatorv2.python_api import totalsegmentator
+from comp2comp.utils.totalsegmentator import totalsegmentator
 
 from comp2comp.inference_class_base import InferenceClass
 from comp2comp.models.models import Models
@@ -147,7 +147,7 @@ class SpineSegmentation(InferenceClass):
         os.environ["SCRATCH"] = self.model_dir
         os.environ["TOTALSEG_WEIGHTS_PATH"] = self.model_dir
 
-        if self.model_name == "ts_spine":
+        if self.model_name in ("ts_spine", "ts_spine_full"):
             seg = totalsegmentator(
                 input=os.path.join(
                     self.output_dir_segmentations, "converted_dcm.nii.gz"
