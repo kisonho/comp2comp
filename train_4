@@ -1,0 +1,38 @@
+#!/bin/bash
+
+clear
+
+export CUDA_VISIBLE_DEVICES=6
+export KERAS_BACKEND=torch
+export TF_CPP_MIN_LOG_LEVEL=1
+
+python train.py \
+    "~/Documents/Datasets/TCIA Final Reviewed/processed/" \
+    models/stanford_v0.0.1.h5 \
+    models/tcia_final_reviewed/fold_4.keras \
+    -f 4 \
+    --preprocessed \
+    --reset_seg \
+    --unfreeze_seg \
+    --recompile \
+    --exp tcia_final_reviewed/train/fold_4_seg.exp \
+    --replace_experiment \
+    # -e 300 \
+    # --unfreeze_decoder \
+    # --unfreeze_encoder \
+
+python train.py \
+    "~/Documents/Datasets/TCIA Final Reviewed/processed/" \
+    experiments/tcia_final_reviewed/train/fold_4_seg.exp/checkpoints/last.keras \
+    models/tcia_final_reviewed/fold_4.keras \
+    -f 4 \
+    --preprocessed \
+    --unfreeze_seg \
+    --recompile \
+    --exp tcia_final_reviewed/train/fold_4_decoder.exp \
+    -e 300 \
+    --unfreeze_decoder \
+    --replace_experiment \
+    # --unfreeze_encoder \
+
+unset CUDA_VISIBLE_DEVICES

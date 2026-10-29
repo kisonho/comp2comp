@@ -25,7 +25,8 @@ class TCIA(Dataset):
     _load_image: LoadImage
     return_path: bool
     IMAGE_FILENAME = "CT_IMAGE.nrrd"
-    SEGMENTATION_FILENAME = "segmented_tissues_final.nrrd"
+    SEGMENTATION_FILENAME = "FinalReviewed.nrrd"
+    # SEGMENTATION_FILENAME = "segmented_tissues_final.nrrd"
     LEAST_LABELED_SLICES_PER_SAMPLE = 1
     WINDOW_SETTINGS = {
         "soft": (400.0, 50.0),

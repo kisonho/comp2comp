@@ -2,36 +2,37 @@
 
 clear
 
-export CUDA_VISIBLE_DEVICES=4
+export CUDA_VISIBLE_DEVICES=5
 export KERAS_BACKEND=torch
 export TF_CPP_MIN_LOG_LEVEL=1
 
 python train.py \
-    ~/Documents/Datasets/TCIA/processed/ \
+    "~/Documents/Datasets/TCIA Final Reviewed/processed/" \
     models/stanford_v0.0.1.h5 \
-    models/tcia/fold_0.keras \
+    models/tcia_final_reviewed/fold_0.keras \
     -f 0 \
     --preprocessed \
+    --reset_seg \
     --unfreeze_seg \
     --recompile \
-    --exp tcia_fold_0_seg.exp \
+    --exp tcia_final_reviewed/train/fold_0_seg.exp \
+    --replace_experiment \
     # -e 300 \
     # --unfreeze_decoder \
     # --unfreeze_encoder \
-    # --replace_experiment \
 
 python train.py \
-    ~/Documents/Datasets/TCIA/processed/ \
-    experiments/tcia_fold_0_seg.exp/checkpoints/last.keras \
-    models/tcia/fold_0.keras \
+    "~/Documents/Datasets/TCIA Final Reviewed/processed/" \
+    experiments/tcia_final_reviewed/train/fold_0_seg.exp/checkpoints/last.keras \
+    models/tcia_final_reviewed/fold_0.keras \
     -f 0 \
     --preprocessed \
     --unfreeze_seg \
     --recompile \
-    --exp tcia_fold_0_decoder.exp \
+    --exp tcia_final_reviewed/train/fold_0_decoder.exp \
     -e 300 \
     --unfreeze_decoder \
+    --replace_experiment \
     # --unfreeze_encoder \
-    # --replace_experiment \
 
 unset CUDA_VISIBLE_DEVICES

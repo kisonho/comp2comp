@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Union
 
-from torch.utils.data import Dataset, Subset
+from torch.utils.data import Subset
 
 from .processed_tcia import ProcessedTCIA
 from .tcia import TCIA
@@ -14,7 +14,7 @@ def load(
     split: float = 0.2,
     fold_idx: int = 0,
     return_path: bool = False,
-) -> tuple[Subset[Dataset], Subset[Dataset]]:
+) -> tuple[Subset[ProcessedTCIA], Subset[ProcessedTCIA]]:
     dataset_cls = ProcessedTCIA if preprocessed else TCIA
     dataset = dataset_cls(dataset_dir, return_path=return_path)
     if not 0 <= fold_idx < 10:

@@ -1,6 +1,6 @@
 """Fine-tune a pretrained Stanford nnUNet Keras model."""
 
-import argparse, gc, os, random, torch
+import argparse, os, random
 from collections.abc import Iterator
 from keras import activations, callbacks, layers, losses, metrics, models, Model
 from typing import Any, Union, cast
@@ -49,15 +49,6 @@ class PatientSampler(Sampler[int]):
         return len(self.dataset)
 
 
-class ClearCudaCache(callbacks.Callback):
-    """Release unused cached CUDA memory after each training epoch."""
-
-    def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-
 class KerasLogger(callbacks.Callback):
     """Write Keras epoch metrics through the application logger."""
     params: dict[str, Any]
@@ -92,6 +83,7 @@ class TrainingConfigs(BaseConfigs):
     unfreeze_encoder: bool
     unfreeze_decoder: bool
     unfreeze_seg: bool
+    reset_seg: bool
 
     def format_arguments(self) -> None:
         """Normalize paths and validate scalar arguments."""
@@ -167,6 +159,12 @@ class TrainingConfigs(BaseConfigs):
             help="Unfreeze the nnUNet segmentation layer during fine-tuning",
         )
         training_args.add_argument(
+            "--reset_seg",
+            action="store_true",
+            default=False,
+            help="Reinitialize the nnUNet segmentation layer before fine-tuning",
+        )
+        training_args.add_argument(
             "--recompile",
             action="store_true",
             help="Recompile the model after loading.",
@@ -179,11 +177,17 @@ class TrainingConfigs(BaseConfigs):
         view.logger.info(f"Dataset: dataset_dir={self.dataset_dir}, fold={self.fold}, preprocessed={self.preprocessed}")
         view.logger.info(f"Pretrained model: {self.pretrained_model}")
         view.logger.info(f"Output model: {self.output_model}")
-        view.logger.info(f"Training arguments: batch_size={self.batch_size}, epochs={self.epoch}, lr={self.lr}, unfreeze_seg={self.unfreeze_seg}, unfreeze_decoder={self.unfreeze_decoder}, unfreeze_encoder={self.unfreeze_encoder}, recompile={self.recompile}")
+        view.logger.info(f"Training arguments: batch_size={self.batch_size}, epochs={self.epoch}, lr={self.lr}, unfreeze_seg={self.unfreeze_seg}, unfreeze_decoder={self.unfreeze_decoder}, unfreeze_encoder={self.unfreeze_encoder}, reset_seg={self.reset_seg}, recompile={self.recompile}")
 
 
 def train(configs: TrainingConfigs) -> Model:
-    """Fine-tune and save the configured Keras model."""
+    """
+    Fine-tune and save the configured Keras model.
+    
+    - Parameters:
+        - configs: The `TrainingConfigs` for configurations.
+    - Returns: A trained `Model`.
+    """
     # normalize directory
     dataset_dir = configs.dataset_dir
     pretrained_model = configs.pretrained_model
@@ -217,20 +221,25 @@ def train(configs: TrainingConfigs) -> Model:
     # load model
     base_model = cast(Model, models.load_model(pretrained_model))
     view.logger.info("Pre-trained model loaded.")
-    num_classes = cast(int, base_model.output_shape[-1])
+    num_classes = 3
     output_layer = base_model.layers[-1]
     if not isinstance(output_layer, layers.Conv2D):
         raise TypeError(
             "Expected the segmentation output layer to be Conv2D, got "
             f"{type(output_layer).__name__}."
         )
+    if configs.reset_seg:
+        output_config = output_layer.get_config()
+        output_config["filters"] = num_classes
+        output_features = output_layer.input
+        output_layer = layers.Conv2D.from_config(output_config)
+        base_model = Model(
+            inputs=base_model.inputs,
+            outputs=output_layer(output_features),
+            name=base_model.name,
+        )
 
-    # With the Keras Torch backend, SoftmaxBackward can return a strided
-    # gradient that Conv2D's CUDA backward kernel rejects with
-    # ``RuntimeError: grad_input must be contiguous``. Computing sparse
-    # cross-entropy directly from logits avoids that backend-specific layout
-    # issue and is also more numerically stable. This assignment is harmless
-    # when resuming one of our logits-based training checkpoints.
+    # With the Keras Torch backend, SoftmaxBackward can return a strided gradient that Conv2D's CUDA backward kernel rejects with ``RuntimeError: grad_input must be contiguous``. Computing sparse cross-entropy directly from logits avoids that backend-specific layout issue and is also more numerically stable. This assignment is harmless when resuming one of our logits-based training checkpoints.
     output_layer.activation = activations.linear
     training_loss = losses.SparseCategoricalCrossentropy(from_logits=True)
     base_model.compile(
@@ -319,7 +328,7 @@ def train(configs: TrainingConfigs) -> Model:
             profile_batch=0,
         ),
         KerasLogger(),
-        ClearCudaCache(),
+        # ClearCudaCache(),
     ]
 
     # train model
@@ -331,6 +340,7 @@ def train(configs: TrainingConfigs) -> Model:
         callbacks=callbacks_list,
     )
 
+    # Load and evaluate best checkpoint
     model = cast(Model, models.load_model(best_ckpt_path))
     best_results = cast(dict[str, float], model.evaluate(
         val_data_loader,
@@ -344,8 +354,7 @@ def train(configs: TrainingConfigs) -> Model:
         )
     )
 
-    # Keep the exported inference model compatible with the pretrained model:
-    # training checkpoints emit logits, while the requested output emits probabilities.
+    # Keep the exported inference model compatible with the pretrained model: training checkpoints emit logits, while the requested output emits probabilities.
     output_layer = model.layers[-1]
     if not isinstance(output_layer, layers.Conv2D):
         raise TypeError(

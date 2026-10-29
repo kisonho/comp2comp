@@ -1,0 +1,16 @@
+#!/bin/bash
+
+clear
+
+export CUDA_VISIBLE_DEVICES=6
+export KERAS_BACKEND=torch
+
+python pred.py \
+    ~/Documents/Datasets/TCIA/processed/ \
+    experiments/tcia_fold_0_decoder.exp/checkpoints/best.keras \
+    outputs/tcia_fold_3/ \
+    -b 32 \
+    -f 3 \
+    --preprocessed \
+
+unset CUDA_VISIBLE_DEVICES

@@ -1,0 +1,27 @@
+#!/bin/bash
+# Usage: ./eval_total_segmentator [NNUNET_TRAINER_DIR_OR_CHECKPOINT] [eval.py options]
+set -euo pipefail
+
+model_path="models/.totalsegmentator/nnunet/results/nnUNet/2d/Task927_FatMuscle/nnUNetTrainerV2__nnUNetPlansv2.1"
+if [[ $# -gt 0 && "$1" != -* ]]; then
+    model_path="$1"
+    shift
+fi
+
+export CUDA_VISIBLE_DEVICES=7
+export KERAS_BACKEND=torch
+export TF_CPP_MIN_LOG_LEVEL=1
+
+for fold in 0 1 2 3 4; do
+    python eval.py \
+        "~/Documents/Datasets/TCIA Final Reviewed/processed/" \
+        "$model_path" \
+        --model_type nnunet \
+        --raw_dataset_dir "~/Documents/Datasets/TCIA Final Reviewed/raw/" \
+        --fold "$fold" \
+        --preprocessed \
+        -exp "tcia_final_reviewed/eval/total_segmentator_fold_${fold}.exp" \
+        "$@"
+done
+
+unset CUDA_VISIBLE_DEVICES

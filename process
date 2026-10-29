@@ -2,7 +2,7 @@
 
 clear
 
-dataset_dir="${1:-$HOME/Documents/Datasets/TCIA/raw/}"
-output_dir="${2:-$HOME/Documents/Datasets/TCIA/processed/}"
+dataset_dir="${1:-$HOME/Documents/Datasets/TCIA Final Reviewed/raw/}"
+output_dir="${2:-$HOME/Documents/Datasets/TCIA Final Reviewed/processed/}"
 
 python -m data "$dataset_dir" "$output_dir"

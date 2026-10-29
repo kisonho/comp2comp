@@ -1,0 +1,42 @@
+#!/bin/bash
+
+clear
+
+CUDA_VISIBLE_DEVICES=0 KERAS_BACKEND=torch TF_CPP_MIN_LOG_LEVEL=1
+
+python eval.py \
+    ~/Documents/Datasets/TCIA/processed/ \
+    models/stanford_v0.0.1.h5 \
+    --fold 0 \
+    --preprocessed \
+    -exp eval/eval_stanford_fold_0.exp \
+
+python eval.py \
+    ~/Documents/Datasets/TCIA/processed/ \
+    models/stanford_v0.0.1.h5 \
+    --fold 1 \
+    --preprocessed \
+    -exp eval/eval_stanford_fold_1.exp \
+
+python eval.py \
+    ~/Documents/Datasets/TCIA/processed/ \
+    models/stanford_v0.0.1.h5 \
+    --fold 2 \
+    --preprocessed \
+    -exp eval/eval_stanford_fold_2.exp \
+
+python eval.py \
+    ~/Documents/Datasets/TCIA/processed/ \
+    models/stanford_v0.0.1.h5 \
+    --fold 3 \
+    --preprocessed \
+    -exp eval/eval_stanford_fold_3.exp \
+
+python eval.py \
+    ~/Documents/Datasets/TCIA/processed/ \
+    models/stanford_v0.0.1.h5 \
+    --fold 4 \
+    --preprocessed \
+    -exp eval/eval_stanford_fold_4.exp \
+
+unset CUDA_VISIBLE_DEVICES

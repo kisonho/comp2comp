@@ -49,6 +49,10 @@ class ProcessedTCIA(Dataset):
             self._sample_ranges.append(range(start, len(self._slices)))
 
     @property
+    def slices(self) -> list[_Slice]:
+        return self._slices
+
+    @property
     def root_dir(self) -> Path:
         """Root directory containing processed patient directories."""
         return self._root_dir
